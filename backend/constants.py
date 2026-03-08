@@ -22,7 +22,6 @@ CONFIG_DIR = os.path.join(PROJECT_ROOT, "config")
 DOWNLOAD_DIR = os.path.join(PROJECT_ROOT, "download")
 SETTINGS_FILE = os.path.join(CONFIG_DIR, "settings.json")
 ARIA2_CONF_FILE = os.path.join(CONFIG_DIR, "aria2.conf")
-WEBVIEW_STORAGE_DIR = os.path.join(CONFIG_DIR, "webview_storage")
 
 # Aria2 默认配置
 ARIA2_DEFAULTS = {
@@ -44,16 +43,11 @@ DEFAULT_SETTINGS = {
     "downloadPath": DOWNLOAD_DIR,
     "maxRetries": DOWNLOAD_DEFAULTS["MAX_RETRIES"],
     "maxConcurrency": DOWNLOAD_DEFAULTS["MAX_CONCURRENCY"],
-    "windowWidth": 1200,
-    "windowHeight": 800,
     "enableIncrementalFetch": True,
     "aria2Host": ARIA2_DEFAULTS["HOST"],
     "aria2Port": ARIA2_DEFAULTS["PORT"],
     "aria2Secret": ARIA2_DEFAULTS["SECRET"],
 }
-
-# 窗口最小尺寸
-WINDOW_MIN_SIZE = (900, 800)
 
 # 服务器默认配置
 SERVER_DEFAULTS = {

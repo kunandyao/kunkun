@@ -1,4 +1,4 @@
-﻿# DouyinCrawler 快速启动菜单
+# DouyinCrawler 快速启动菜单
 # 使用方法: .\quick-start.ps1
 
 $ErrorActionPreference = "Stop"
@@ -70,10 +70,10 @@ while ($true) {
                 Read-Host "`n按回车键继续"
             }
             "4" {
-                Write-Host "`n━━━ 运行应用 ━━━`n" -ForegroundColor Cyan
-                Write-Host "说明: 以开发模式运行应用" -ForegroundColor Gray
-                Write-Host "执行: python main.py`n" -ForegroundColor Yellow
-                python main.py
+                Write-Host "`n━━━ 运行 Web 服务 ━━━`n" -ForegroundColor Cyan
+                Write-Host "说明: 启动 Web 服务，浏览器访问 http://localhost:8000" -ForegroundColor Gray
+                Write-Host "执行: python -m backend.server`n" -ForegroundColor Yellow
+                python -m backend.server
                 Read-Host "`n按回车键继续"
             }
             "5" {
