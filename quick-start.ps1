@@ -72,8 +72,8 @@ while ($true) {
             "4" {
                 Write-Host "`n━━━ 运行 Web 服务 ━━━`n" -ForegroundColor Cyan
                 Write-Host "说明: 启动 Web 服务，浏览器访问 http://localhost:8000" -ForegroundColor Gray
-                Write-Host "执行: python -m backend.server`n" -ForegroundColor Yellow
-                python -m backend.server
+                Write-Host "执行: python main.py`n" -ForegroundColor Yellow
+                python main.py
                 Read-Host "`n按回车键继续"
             }
             "5" {
