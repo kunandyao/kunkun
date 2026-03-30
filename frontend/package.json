@@ -12,6 +12,8 @@
     "test:ui": "vitest --ui"
   },
   "dependencies": {
+    "echarts": "^6.0.0",
+    "echarts-for-react": "^3.0.6",
     "lucide-react": "^0.555.0",
     "memoize-one": "6.0.0",
     "react": "^18.2.0",

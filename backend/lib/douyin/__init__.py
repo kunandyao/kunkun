@@ -53,5 +53,6 @@
 """
 
 from .crawler import Douyin
+from .hot import DouyinHotFetcher
 
-__all__ = ["Douyin"]
+__all__ = ["Douyin", "DouyinHotFetcher"]

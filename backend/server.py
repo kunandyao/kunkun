@@ -34,10 +34,13 @@ from .routers import (
     aria2_router,
     comment_router,
     file_router,
+    hot_router,
+    hot_comment_router,
     settings_router,
     system_router,
     task_router,
 )
+from .routers.auth import router as auth_router
 from .sse import sse
 from .state import state
 
@@ -82,6 +85,12 @@ async def lifespan(app: FastAPI):
 
     logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     logger.info("🧹 正在清理资源...")
+    try:
+        from .lib.preprocessing.spark_processor import shutdown_spark_for_process
+
+        shutdown_spark_for_process()
+    except Exception:
+        pass
     state.cleanup()
     logger.info("✓ 资源已清理")
     logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -112,6 +121,9 @@ app.include_router(settings_router)
 app.include_router(aria2_router)
 app.include_router(file_router)
 app.include_router(system_router)
+app.include_router(hot_router)
+app.include_router(hot_comment_router)
+app.include_router(auth_router)
 
 
 # ============================================================================

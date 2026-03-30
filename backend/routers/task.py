@@ -200,8 +200,13 @@ def _execute_task(
             # 转换格式
             works = _convert_douyin_results(new_items, item_type)
 
+            logger.info(f"数据转换完成：原始 {len(new_items)} 条 -> 转换后 {len(works)} 条")
+            if works:
+                logger.info(f"第一条转换后的数据：id={works[0].get('id')}, desc={works[0].get('desc', '')[:50]}")
+                logger.info(f"第一条转换后的 author: {works[0].get('author')}")
+
             if not works:
-                logger.warning(f"转换后没有有效数据！原始数据: {len(new_items)} 条")
+                logger.warning(f"转换后没有有效数据！原始数据：{len(new_items)} 条")
                 return
 
             # 更新缓存

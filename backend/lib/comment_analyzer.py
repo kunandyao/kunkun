@@ -216,6 +216,71 @@ class CommentAnalyzer:
         }
         return default_stopwords
 
+    def _find_chinese_font(self) -> Optional[str]:
+        """
+        查找系统中可用的中文字体
+
+        Returns:
+            字体文件路径，如果找不到返回None
+        """
+        import platform
+        import glob
+
+        system = platform.system()
+
+        # 常见的中文字体列表
+        chinese_fonts = [
+            "simhei.ttf", "simhei.ttc",
+            "msyh.ttc", "msyh.ttf",
+            "simsun.ttc", "simsun.ttf",
+            "stsong.ttf", "stxihei.ttf",
+            "NotoSansCJK-Regular.ttc",
+            "SourceHanSansCN-Regular.otf",
+        ]
+
+        # Windows系统字体路径
+        if system == "Windows":
+            font_dirs = [
+                "C:/Windows/Fonts",
+                "C:/Windows/System32/Fonts",
+            ]
+        # Linux系统字体路径
+        elif system == "Linux":
+            font_dirs = [
+                "/usr/share/fonts",
+                "/usr/local/share/fonts",
+                os.path.expanduser("~/.local/share/fonts"),
+            ]
+        # macOS系统字体路径
+        elif system == "Darwin":
+            font_dirs = [
+                "/System/Library/Fonts",
+                "/Library/Fonts",
+                os.path.expanduser("~/Library/Fonts"),
+            ]
+        else:
+            return None
+
+        # 搜索字体文件
+        for font_dir in font_dirs:
+            if not os.path.exists(font_dir):
+                continue
+
+            for font_name in chinese_fonts:
+                # 直接匹配
+                font_path = os.path.join(font_dir, font_name)
+                if os.path.exists(font_path):
+                    return font_path
+
+                # 模糊搜索
+                pattern = os.path.join(font_dir, f"*{font_name.split('.')[0]}*")
+                matches = glob.glob(pattern, recursive=True)
+                if matches:
+                    return matches[0]
+
+        logger.warning("未找到中文字体，词云可能无法正确显示中文")
+        return None
+
     def generate_wordcloud(self, output_path: str) -> bool:
         """
         生成词云图
@@ -228,31 +293,44 @@ class CommentAnalyzer:
         """
         try:
             from wordcloud import WordCloud
+            import matplotlib
+            matplotlib.use('Agg')  # 使用非GUI后端
             import matplotlib.pyplot as plt
 
             # 获取热门词
             hot_words = self._analyze_hot_words(100)
             if not hot_words:
+                logger.warning("没有足够的词汇生成词云")
                 return False
 
             # 构建词频字典
             word_freq = dict(hot_words)
 
+            # 查找中文字体
+            font_path = self._find_chinese_font()
+
             # 生成词云
             wc = WordCloud(
-                font_path="simhei.ttf",  # 需要中文字体
+                font_path=font_path if font_path else None,
                 width=800,
                 height=400,
                 background_color="white",
                 max_words=100,
+                prefer_horizontal=0.9,
+                relative_scaling=0.5,
+                min_font_size=10,
             ).generate_from_frequencies(word_freq)
 
             # 保存
             plt.figure(figsize=(10, 5))
             plt.imshow(wc, interpolation="bilinear")
             plt.axis("off")
-            plt.tight_layout()
-            plt.savefig(output_path, dpi=150, bbox_inches="tight")
+            plt.tight_layout(pad=0)
+            
+            # 确保输出目录存在
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            
+            plt.savefig(output_path, dpi=150, bbox_inches="tight", facecolor="white")
             plt.close()
 
             logger.info(f"词云图已保存: {output_path}")
@@ -358,6 +436,8 @@ class CommentAnalyzer:
                 page.add(pie2)
 
             # 保存
+            # 确保输出目录存在
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
             page.render(output_path)
             logger.info(f"HTML报告已保存: {output_path}")
             return True
@@ -435,6 +515,9 @@ class CommentAnalyzer:
 </html>
 """
 
+            # 确保输出目录存在
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            
             with open(output_path, "w", encoding="utf-8") as f:
                 f.write(html_content)
 

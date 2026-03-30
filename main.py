@@ -1,5 +1,5 @@
 """
-DouyinCrawler Web Server - 抖音采集工具 Web 服务
+DouyinCrawler Web Server - 抖音舆论采集工具 Web 服务
 
 提供 RESTful API 接口和前端页面。
 
@@ -31,8 +31,11 @@ from pydantic import BaseModel
 from backend.constants import RESOURCE_ROOT, SERVER_DEFAULTS
 from backend.routers import (
     aria2_router,
+    auth_router,
     comment_router,
     file_router,
+    hot_comment_router,
+    hot_router,
     settings_router,
     system_router,
     task_router,
@@ -74,6 +77,21 @@ async def lifespan(app: FastAPI):
     logger.info("🚀 FastAPI Server 启动中...")
     logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
+    # 尝试自动初始化数据库表
+    try:
+        logger.info("正在初始化数据库表...")
+        from backend.lib.database.init import init_tables
+        from backend.lib.database.connection import db_manager
+        
+        # 先测试数据库连接
+        if db_manager.test_connection():
+            init_tables()
+            logger.info("✓ 数据库表初始化成功")
+        else:
+            logger.warning("⚠️  数据库连接失败，跳过表初始化")
+    except Exception as e:
+        logger.warning(f"⚠️  数据库初始化失败：{e}")
+
     # state 在模块导入时已初始化
     logger.info("✓ 应用状态已初始化")
 
@@ -81,6 +99,12 @@ async def lifespan(app: FastAPI):
 
     logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
     logger.info("🧹 正在清理资源...")
+    try:
+        from backend.lib.preprocessing.spark_processor import shutdown_spark_for_process
+
+        shutdown_spark_for_process()
+    except Exception:
+        pass
     state.cleanup()
     logger.info("✓ 资源已清理")
     logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
@@ -106,11 +130,14 @@ app.add_middleware(
 )
 
 app.include_router(task_router)
+app.include_router(auth_router)
 app.include_router(comment_router)
 app.include_router(settings_router)
 app.include_router(aria2_router)
 app.include_router(file_router)
 app.include_router(system_router)
+app.include_router(hot_router)
+app.include_router(hot_comment_router)
 
 
 # ============================================================================

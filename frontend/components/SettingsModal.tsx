@@ -252,62 +252,51 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
                   </svg>
                   粘贴
                 </button>
-                {isGUIMode() ? (
-                  <button
-                    onClick={async () => {
-                      setIsLoggingIn(true);
-                      toast.info('正在打开登录窗口，请完成登录...');
-                      try {
-                        const result = await bridge.cookieLogin();
-                        if (result.success) {
-                          setSettings(prev => ({ 
-                            ...prev, 
-                            cookie: result.cookie,
-                            userAgent: result.user_agent || prev.userAgent
-                          }));
-                          if (errors.cookie) {
-                            setErrors(prev => {
-                              const newErrors = { ...prev };
-                              delete newErrors.cookie;
-                              return newErrors;
-                            });
-                          }
-                          toast.success('Cookie 获取成功！请点击保存配置');
-                          logger.success('✓ 通过登录获取 Cookie 成功');
-                        } else {
-                          toast.error(result.error || '获取失败');
-                          logger.warn(`✗ Cookie 获取失败: ${result.error}`);
+                <button
+                  onClick={async () => {
+                    setIsLoggingIn(true);
+                    toast.info('正在打开登录窗口，请完成登录...');
+                    try {
+                      const result = await bridge.cookieLogin();
+                      if (result.success) {
+                        setSettings(prev => ({ 
+                          ...prev, 
+                          cookie: result.cookie,
+                          userAgent: result.user_agent || prev.userAgent
+                        }));
+                        if (errors.cookie) {
+                          setErrors(prev => {
+                            const newErrors = { ...prev };
+                            delete newErrors.cookie;
+                            return newErrors;
+                          });
                         }
-                      } catch (err) {
-                        console.error('登录获取失败:', err);
-                        toast.error('登录获取失败，请手动输入');
-                      } finally {
-                        setIsLoggingIn(false);
+                        toast.success('Cookie 获取成功！请点击保存配置');
+                        logger.success('✓ 通过登录获取 Cookie 成功');
+                      } else {
+                        toast.error(result.error || '获取失败');
+                        logger.warn(`✗ Cookie 获取失败：${result.error}`);
                       }
-                    }}
-                    disabled={isLoggingIn}
-                    className="text-xs bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white px-3 py-1.5 rounded-lg flex items-center gap-1 transition-colors"
-                    title="打开抖音登录窗口获取 Cookie"
-                  >
-                    <LogIn size={12} />
-                    {isLoggingIn ? '登录中...' : '登录获取'}
-                  </button>
-                ) : (
-                  <button
-                    disabled={true}
-                    className="text-xs bg-gray-400 text-white px-3 py-1.5 rounded-lg flex items-center gap-1 cursor-not-allowed opacity-60"
-                    title="仅 GUI 模式支持"
-                  >
-                    <LogIn size={12} />
-                    仅GUI模式
-                  </button>
-                )}
+                    } catch (err) {
+                      console.error('登录获取失败:', err);
+                      toast.error('登录获取失败，请手动输入');
+                    } finally {
+                      setIsLoggingIn(false);
+                    }
+                  }}
+                  disabled={isLoggingIn}
+                  className="text-xs bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white px-3 py-1.5 rounded-lg flex items-center gap-1 transition-colors"
+                  title="打开抖音登录窗口获取 Cookie"
+                >
+                  <LogIn size={12} />
+                  {isLoggingIn ? '登录中...' : '登录获取'}
+                </button>
                 <button
                   onClick={() => bridge.openExternal('https://github.com/kunandyao/kunkun/blob/main/USAGE.md#cookie%E8%8E%B7%E5%8F%96')}
                   className="text-xs text-blue-600 hover:text-blue-700 hover:underline flex items-center gap-1 transition-colors"
                   title="查看获取 Cookie 的详细教程"
                 >
-                  手动获取?
+                  手动获取？
                   <ExternalLink size={12} />
                 </button>
               </div>

@@ -384,7 +384,7 @@ class Aria2Service {
 
     try {
       // 验证URL格式
-      if (!url || typeof url !== 'string') {
+      if (!url || typeof url !== 'string' || !url.trim()) {
         const error = `无效的URL: ${url}`;
         logger.error(`✗ ${error}`);
         throw new Error(error);

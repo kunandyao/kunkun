@@ -33,6 +33,9 @@ class AppState:
         self.task_status: Dict[str, Dict[str, Any]] = {}
         self.task_results: Dict[str, List[Dict[str, Any]]] = {}
         self.aria2_config_paths: Dict[str, str] = {}
+        
+        # 最新爬取的热榜评论文件列表
+        self.latest_hot_comment_files: List[str] = []
 
         # Aria2 管理器
         self.aria2_manager: Optional[Aria2Manager] = self._init_aria2()

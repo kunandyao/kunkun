@@ -198,7 +198,7 @@ export const DetailModal: React.FC<DetailModalProps> = ({
 
       let successCount = 0;
 
-      if (work.type === 'video' && work.videoUrl) {
+      if (work.type === 'video' && work.videoUrl && work.videoUrl.trim()) {
         const filename = `${baseFilename}.mp4`;
         toast.info(`正在添加视频下载任务...`);
         logger.download.start(`开始下载视频: ${filename}`, { workId: work.id });
@@ -220,17 +220,23 @@ export const DetailModal: React.FC<DetailModalProps> = ({
           setDownloadProgress(null);
           throw new Error('视频下载添加失败');
         }
-      } else if (work.type === 'image' && work.images) {
+      } else if (work.type === 'image' && work.images && work.images.length > 0) {
         const imageDir = `${downloadPath}/${baseFilename}`;
         toast.info(`正在添加图集下载任务: ${work.images.length} 张图片`);
         logger.download.start(`开始下载图集: ${work.images.length} 张图片`, { workId: work.id });
 
         for (let i = 0; i < work.images.length; i++) {
           try {
+            const imageUrl = work.images[i];
+            if (!imageUrl || !imageUrl.trim()) {
+              logger.download.warn(`图片 ${i + 1} URL为空，跳过`, { workId: work.id, imageIndex: i });
+              continue;
+            }
+            
             const filename = `${work.id}_${i + 1}.jpeg`;
             const result = await addDownload(
               `${work.id}_${i}`,
-              work.images[i],
+              imageUrl,
               filename,
               imageDir,
               cookie
@@ -249,6 +255,10 @@ export const DetailModal: React.FC<DetailModalProps> = ({
 
         if (successCount > 0) {
           toast.success(`已添加 ${successCount} 张图片到下载队列`);
+          setIsDownloading(false);
+          setDownloadProgress(null);
+        } else {
+          toast.error('没有有效的图片URL');
           setIsDownloading(false);
           setDownloadProgress(null);
         }
@@ -272,6 +282,12 @@ export const DetailModal: React.FC<DetailModalProps> = ({
 
   const downloadCover = async () => {
     try {
+      if (!work.cover || !work.cover.trim()) {
+        toast.error('封面链接为空，无法下载');
+        logger.error(`[DetailModal] 封面链接为空: ${work.id}`);
+        return;
+      }
+      
       const settings = await bridge.getSettings();
       const downloadPath = settings.downloadPath || '';
       const cookie = settings.cookie || '';
@@ -292,7 +308,7 @@ export const DetailModal: React.FC<DetailModalProps> = ({
   };
 
   const downloadMusic = async () => {
-    if (work.music?.url) {
+    if (work.music?.url && work.music.url.trim()) {
       try {
         const settings = await bridge.getSettings();
         const downloadPath = settings.downloadPath || '';

@@ -39,10 +39,12 @@ DOWNLOAD_DEFAULTS = {
 # 默认设置（用于首次运行创建配置文件）
 DEFAULT_SETTINGS = {
     "cookie": "",
-    "userAgent": "",  # 留空则使用内置默认值 (RequestHeaders.USER_AGENT)
+    "userAgent": "",
     "downloadPath": DOWNLOAD_DIR,
     "maxRetries": DOWNLOAD_DEFAULTS["MAX_RETRIES"],
     "maxConcurrency": DOWNLOAD_DEFAULTS["MAX_CONCURRENCY"],
+    "windowWidth": 1280,
+    "windowHeight": 720,
     "enableIncrementalFetch": True,
     "aria2Host": ARIA2_DEFAULTS["HOST"],
     "aria2Port": ARIA2_DEFAULTS["PORT"],

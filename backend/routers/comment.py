@@ -3,23 +3,26 @@
 
 提供作品评论列表（单页）与多页爬取（导出 CSV）。
 支持浏览器自动化爬取和数据分析功能。
+
+所有评论爬取后会自动进行 Spark 数据清洗。
 """
 
 import csv
 import datetime
 import os
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, HTTPException
 from loguru import logger
 from pydantic import BaseModel
 
-from ..constants import DOWNLOAD_DIR
+from ..constants import DOWNLOAD_DIR, PROJECT_ROOT
 from ..lib.cookies import CookieManager
 from ..lib.douyin.client import DouyinClient
 from ..lib.douyin.request import Request
 from ..lib.comment_analyzer import CommentAnalyzer, analyze_comments
+from ..lib.preprocessing import SparkPreprocessor
 from ..settings import settings
 
 router = APIRouter(prefix="/api/comment", tags=["评论"])
@@ -50,6 +53,39 @@ class AnalyzeRequest(BaseModel):
 
     csv_file: Optional[str] = None
     generate_report: bool = True
+
+
+def _resolve_comment_csv_path(explicit: Optional[str]) -> Optional[str]:
+    """
+    评论 CSV 路径：绝对路径 / 相对 download / 相对项目根；未指定则在
+    download/comments/*.csv 与 download 根目录下名称含 comment 的 *.csv 中取最新修改时间。
+    """
+    if explicit:
+        p = explicit.strip()
+        if os.path.isfile(p):
+            return os.path.normpath(p)
+        for base in (DOWNLOAD_DIR, PROJECT_ROOT):
+            cand = os.path.normpath(os.path.join(base, p))
+            if os.path.isfile(cand):
+                return cand
+        return None
+
+    candidates: List[str] = []
+    sub = os.path.join(DOWNLOAD_DIR, "comments")
+    if os.path.isdir(sub):
+        for name in os.listdir(sub):
+            if name.lower().endswith(".csv"):
+                candidates.append(os.path.join(sub, name))
+    if os.path.isdir(DOWNLOAD_DIR):
+        for name in os.listdir(DOWNLOAD_DIR):
+            if not name.lower().endswith(".csv"):
+                continue
+            low = name.lower()
+            if low.startswith("comments") or "comment" in low:
+                candidates.append(os.path.join(DOWNLOAD_DIR, name))
+    if not candidates:
+        return None
+    return max(candidates, key=os.path.getmtime)
 
 
 def _normalize_comment(raw: dict) -> dict:
@@ -83,6 +119,37 @@ def _get_client() -> DouyinClient:
     ua = (settings.get("userAgent") or "").strip()
     req = Request(cookie=cookie, UA=ua)
     return DouyinClient(req)
+
+
+def _run_spark_cleaning(csv_path: str, aweme_id: str) -> Tuple[str, int]:
+    """
+    对评论 CSV 文件进行 Spark 清洗
+    
+    Args:
+        csv_path: 原始 CSV 文件路径
+        aweme_id: 视频 ID
+        
+    Returns:
+        Tuple[str, int]: (清洗后的 CSV 路径, 清洗后的记录数)
+    """
+    try:
+        cleaned_dir = os.path.join(DOWNLOAD_DIR, "comments", "cleaned")
+        os.makedirs(cleaned_dir, exist_ok=True)
+        
+        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        cleaned_path = os.path.join(cleaned_dir, f"cleaned_{aweme_id}_{ts}")
+        
+        logger.info(f"开始 Spark 数据清洗: {csv_path}")
+        preprocessor = SparkPreprocessor()
+        n, _ = preprocessor.process_and_save_csv(csv_path, cleaned_path, save_parquet=False)
+        
+        cleaned_csv_path = f"{cleaned_path}.csv"
+        logger.success(f"✓ Spark 清洗完成: {n} 条记录 -> {cleaned_csv_path}")
+        
+        return cleaned_csv_path, n
+    except Exception as e:
+        logger.error(f"Spark 清洗失败: {e}")
+        return None, 0
 
 
 @router.get("/list")
@@ -127,7 +194,7 @@ def get_comment_list(
 @router.post("/crawl")
 def crawl_comments(request: CommentCrawlRequest) -> Dict[str, Any]:
     """
-    多页爬取评论，返回列表并可选导出 CSV
+    多页爬取评论，返回列表并导出 CSV，然后自动进行 Spark 清洗
 
     - aweme_id: 作品 ID
     - max_count: 最多爬取条数，默认 500；0 表示不限制
@@ -185,7 +252,7 @@ def crawl_comments(request: CommentCrawlRequest) -> Dict[str, Any]:
         cursor = resp.get("cursor", cursor)
         time.sleep(0.3)
 
-    # 导出 CSV 到下载目录
+    # 导出原始 CSV 到下载目录
     comments_dir = os.path.join(DOWNLOAD_DIR, "comments")
     os.makedirs(comments_dir, exist_ok=True)
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -202,15 +269,24 @@ def crawl_comments(request: CommentCrawlRequest) -> Dict[str, Any]:
             w.writeheader()
             for row in all_comments:
                 w.writerow({k: row.get(k, "") for k in fieldnames})
+        logger.info(f"✓ 原始评论已保存: {csv_path}")
     except Exception as e:
         logger.warning("评论 CSV 写入失败: {}", e)
         csv_path = None
+
+    # 自动进行 Spark 清洗
+    cleaned_csv_path = None
+    cleaned_count = 0
+    if csv_path and os.path.exists(csv_path):
+        cleaned_csv_path, cleaned_count = _run_spark_cleaning(csv_path, aweme_id)
 
     return {
         "comments": all_comments,
         "total": len(all_comments),
         "file": csv_path,
         "filename": csv_filename if csv_path else None,
+        "cleaned_file": cleaned_csv_path,
+        "cleaned_count": cleaned_count,
     }
 
 
@@ -218,6 +294,7 @@ def crawl_comments(request: CommentCrawlRequest) -> Dict[str, Any]:
 def crawl_comments_browser(request: BrowserCrawlRequest) -> Dict[str, Any]:
     """
     使用浏览器自动化爬取评论（API方式的备用方案）
+    爬取后自动进行 Spark 清洗
 
     - aweme_id: 作品 ID
     - video_url: 可选的视频URL
@@ -243,11 +320,21 @@ def crawl_comments_browser(request: BrowserCrawlRequest) -> Dict[str, Any]:
         )
         result = crawler.crawl()
 
+        # 自动进行 Spark 清洗
+        cleaned_csv_path = None
+        cleaned_count = 0
+        if result.get("output_file") and os.path.exists(result["output_file"]):
+            cleaned_csv_path, cleaned_count = _run_spark_cleaning(
+                result["output_file"], aweme_id
+            )
+
         return {
             "comments": result["comments"],
             "total": result["total"],
             "file": result["output_file"],
             "method": "browser",
+            "cleaned_file": cleaned_csv_path,
+            "cleaned_count": cleaned_count,
         }
     except Exception as e:
         logger.exception("浏览器自动化爬取失败")
@@ -297,32 +384,41 @@ def analyze_comments_endpoint(request: AnalyzeRequest) -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/analysis-report")
-def get_analysis_report(report_type: str = "html") -> Dict[str, Any]:
+@router.post("/preprocess")
+def preprocess_comments(request: AnalyzeRequest) -> Dict[str, Any]:
     """
-    获取最新的分析报告
+    使用 Spark 预处理评论数据
 
-    - report_type: 报告类型 (html, wordcloud)
+    - csv_file: CSV文件路径，如果不提供则使用最近爬取的评论
     """
-    analysis_dir = os.path.join(DOWNLOAD_DIR, "analysis")
-    if not os.path.exists(analysis_dir):
-        raise HTTPException(status_code=404, detail="未找到分析报告")
+    csv_path = _resolve_comment_csv_path(request.csv_file)
+    if not csv_path:
+        raise HTTPException(status_code=404, detail="未找到评论数据文件")
 
-    if report_type == "html":
-        files = [f for f in os.listdir(analysis_dir) if f.startswith("comment_analysis") and f.endswith(".html")]
-    elif report_type == "wordcloud":
-        files = [f for f in os.listdir(analysis_dir) if f.startswith("comment_wordcloud") and f.endswith(".png")]
-    else:
-        raise HTTPException(status_code=400, detail="不支持的报告类型")
+    output_dir = os.path.join(DOWNLOAD_DIR, "preprocessed")
+    os.makedirs(output_dir, exist_ok=True)
+    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_path = os.path.join(output_dir, f"preprocessed_{ts}")
 
-    if not files:
-        raise HTTPException(status_code=404, detail=f"未找到{report_type}报告")
+    # 禁止在此 with/stop：SparkSession 为进程级单例，stop 会拆掉其它并发请求共用的 Context
+    try:
+        preprocessor = SparkPreprocessor()
+        df = preprocessor.load_data_from_csv(csv_path)
+        cleaned_df = preprocessor.clean_data(df)
+        tokenized_df = preprocessor.tokenize(cleaned_df)
+        corpus_df = preprocessor.generate_corpus(tokenized_df)
+        n = preprocessor.save_to_parquet(corpus_df, output_path)
 
-    latest_file = max(files, key=lambda f: os.path.getmtime(os.path.join(analysis_dir, f)))
-    file_path = os.path.join(analysis_dir, latest_file)
-
-    return {
-        "file_path": file_path,
-        "filename": latest_file,
-        "created_at": datetime.datetime.fromtimestamp(os.path.getmtime(file_path)).isoformat(),
-    }
+        return {
+            "success": True,
+            "message": "评论数据预处理成功",
+            "input_file": csv_path,
+            "output_path": output_path,
+            "total_records": n,
+            "processed_records": n,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("评论预处理失败")
+        raise HTTPException(status_code=500, detail=str(e))

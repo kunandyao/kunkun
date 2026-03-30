@@ -1,21 +1,23 @@
 
 import {
+  BarChart3,
   Download,
   Film,
   Github,
-  Hash,
   Heart,
   Layers,
+  MessageSquare,
   Music,
-  Search,
   Settings,
   Star,
   Terminal,
-  User
+  User as UserIcon,
+  Flame,
+  LogOut
 } from 'lucide-react';
 import React from 'react';
 import { bridge } from '../services/bridge';
-import { TaskType } from '../types';
+import { TaskType, User } from '../types';
 import { formatSpeedSimple } from '../utils/formatters';
 
 interface SidebarProps {
@@ -29,22 +31,26 @@ interface SidebarProps {
     activeCount: number;
     downloadSpeed: number;
   };
+  currentUser: User | null;
+  onOpenAuth: () => void;
+  onLogout: () => void;
 }
 
 const menuItems = [
+  { id: TaskType.HOT_SEARCH, label: '抖音热榜', icon: Flame },
+  { id: TaskType.HOT_COMMENT, label: '热榜评论采集', icon: MessageSquare },
+  { id: TaskType.HOT_COMMENT_DASHBOARD, label: '热榜评论大屏', icon: BarChart3 },
   { id: TaskType.AWEME, label: '单个作品', icon: Film },
-  { id: TaskType.POST, label: '用户主页', icon: User },
+  { id: TaskType.POST, label: '用户主页', icon: UserIcon },
   { id: TaskType.FAVORITE, label: '用户喜欢', icon: Heart },
   { id: TaskType.COLLECTION, label: '用户收藏', icon: Star },
   { id: TaskType.MUSIC, label: '音乐原声', icon: Music },
-  { id: TaskType.HASHTAG, label: '话题挑战', icon: Hash },
   { id: TaskType.MIX, label: '合集作品', icon: Layers },
-  { id: TaskType.SEARCH, label: '关键词搜索', icon: Search },
 ];
 
 export const Sidebar: React.FC<SidebarProps> = ({
   activeTab, setActiveTab, onOpenSettings, showLogs, setShowLogs,
-  isDownloading, downloadStats
+  isDownloading, downloadStats, currentUser, onOpenAuth, onLogout
 }) => {
   return (
     <div className="w-64 bg-slate-900 text-white flex flex-col h-full shadow-2xl relative z-50">
@@ -58,6 +64,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <div className="text-[10px] text-slate-500 uppercase font-semibold tracking-wider">Crawler Tool</div>
         </div>
       </div>
+
+      {/* User Info */}
+      {currentUser && (
+        <div className="px-6 py-4 border-t border-slate-800">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-full flex items-center justify-center">
+              <UserIcon size={20} className="text-white" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-semibold text-white truncate">{currentUser.username}</div>
+              <div className="text-xs text-slate-400 truncate">{currentUser.email}</div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto py-6 px-3 custom-scrollbar">
@@ -137,6 +158,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <Settings size={18} className="text-slate-500 group-hover:text-slate-300" />
           <span className="font-medium">系统配置</span>
         </button>
+
+        {/* 登录/登出按钮 */}
+        {currentUser ? (
+          <button
+            onClick={onLogout}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-red-400 hover:text-red-300 hover:bg-slate-800 transition-all duration-200 group"
+          >
+            <LogOut size={18} className="text-slate-500 group-hover:text-red-400" />
+            <span className="font-medium">退出登录</span>
+          </button>
+        ) : (
+          <button
+            onClick={onOpenAuth}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-blue-400 hover:text-blue-300 hover:bg-slate-800 transition-all duration-200 group"
+          >
+            <UserIcon size={18} className="text-slate-500 group-hover:text-blue-400" />
+            <span className="font-medium">用户登录</span>
+          </button>
+        )}
 
         <button
           onClick={() => bridge.openExternal('https://github.com/kunandyao/kunkun')}

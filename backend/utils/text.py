@@ -118,7 +118,7 @@ def url_redirect(url: str) -> str:
 
 def save_json(filename: str, data: dict) -> None:
     """
-    保存字典为JSON文件
+    保存字典为 JSON 文件
 
     Args:
         filename: 文件名（包含路径）
@@ -128,9 +128,63 @@ def save_json(filename: str, data: dict) -> None:
     if path:
         os.makedirs(path, exist_ok=True)
 
-    try:
-        with open(f"{filename}.json", "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False)
-    except Exception as e:
-        logger.error(f"保存JSON文件 {filename} 时出错: {e}")
-        raise
+    final_path = f"{filename}.json"
+    temp_path = f"{filename}.tmp"
+
+    # 添加重试机制以处理文件占用问题
+    max_retries = 5
+    retry_delays = [0.2, 0.5, 1.0, 2.0, 3.0]  # 递增延迟
+    
+    for attempt in range(max_retries):
+        try:
+            # 如果目标文件已存在，先删除（避免重命名冲突）
+            if os.path.exists(final_path):
+                try:
+                    os.remove(final_path)
+                    time.sleep(0.2)  # 等待文件系统更新
+                except Exception:
+                    pass
+            
+            # 清理可能存在的旧临时文件
+            if os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                    time.sleep(0.1)
+                except Exception:
+                    pass
+            
+            # 写入临时文件
+            with open(temp_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            
+            # 等待写入完成
+            time.sleep(0.1)
+            
+            # 重命名临时文件为目标文件（原子操作）
+            os.rename(temp_path, final_path)
+            
+            logger.debug(f"✓ JSON 文件已保存：{filename}.json")
+            return
+        except PermissionError as e:
+            if attempt < max_retries - 1:
+                delay = retry_delays[attempt]
+                logger.warning(f"保存文件 {filename}.json 时权限被拒绝，{delay}秒后重试 ({attempt + 1}/{max_retries}): {e}")
+                time.sleep(delay)
+            else:
+                logger.error(f"保存 JSON 文件 {filename} 失败，已达到最大重试次数：{e}")
+                # 清理临时文件
+                if os.path.exists(temp_path):
+                    try:
+                        os.remove(temp_path)
+                    except Exception:
+                        pass
+                raise
+        except Exception as e:
+            logger.error(f"保存 JSON 文件 {filename} 时出错：{e}")
+            # 清理临时文件
+            if os.path.exists(temp_path):
+                try:
+                    os.remove(temp_path)
+                except Exception:
+                    pass
+            raise

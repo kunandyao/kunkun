@@ -168,9 +168,25 @@ class DataParser:
         # 封面
         cover = item["video"].get("cover")
         if isinstance(cover, dict):
-            aweme["cover"] = cover["url_list"][-1]
+            # 从 cover 字典中获取 URL 列表
+            url_list = cover.get("url_list") or cover.get("urlList", [])
+            if url_list:
+                aweme["cover"] = url_list[-1]
+            else:
+                # 如果 url_list 为空，尝试使用 origin_cover
+                origin_cover = item["video"].get("origin_cover")
+                if origin_cover and isinstance(origin_cover, dict):
+                    url_list = origin_cover.get("url_list") or origin_cover.get("urlList", [])
+                    aweme["cover"] = url_list[-1] if url_list else ""
+                else:
+                    aweme["cover"] = ""
         else:
-            aweme["cover"] = f"https:{item['video']['dynamicCover']}"
+            # 尝试使用 dynamicCover
+            dynamic_cover = item["video"].get("dynamic_cover") or item["video"].get("dynamicCover")
+            if dynamic_cover:
+                aweme["cover"] = f"https:{dynamic_cover}" if not dynamic_cover.startswith("http") else dynamic_cover
+            else:
+                aweme["cover"] = ""
 
         # 作者信息
         author = item.get("author", item.get("authorInfo"))

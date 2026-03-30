@@ -59,6 +59,8 @@ export interface Bridge {
   crawlCommentsBrowser: (awemeId: string, videoUrl?: string, maxCount?: number) => Promise<{ comments: any[]; total: number; file: string | null; method: string }>;
   /** 分析评论数据并生成报告 */
   analyzeComments: (csvFile?: string, generateReport?: boolean) => Promise<{ analysis: Record<string, unknown>; csv_file: string; html_report?: string; wordcloud?: string }>;
+  /** 使用 Spark 预处理评论数据 */
+  preprocessComments: (csvFile?: string) => Promise<{ success: boolean; message: string; input_file: string; output_path: string; total_records: number; processed_records: number }>;
   /** 获取最新的分析报告 */
   getAnalysisReport: (reportType?: 'html' | 'wordcloud') => Promise<{ file_path: string; filename: string; created_at: string }>;
 }
@@ -257,6 +259,19 @@ export const bridge: Bridge = {
       return result;
     } catch (error) {
       handleError(error, { csvFile, generateReport }, { customMessage: '评论分析失败' });
+      throw error;
+    }
+  },
+
+  /** 使用 Spark 预处理评论数据 */
+  preprocessComments: async (csvFile?: string) => {
+    try {
+      logger.api.request('preprocess comments', { csvFile });
+      const result = await api.comment.preprocess(csvFile);
+      logger.api.response('preprocess comments', { success: result.success, total: result.total_records });
+      return result;
+    } catch (error) {
+      handleError(error, { csvFile }, { customMessage: '评论预处理失败' });
       throw error;
     }
   },

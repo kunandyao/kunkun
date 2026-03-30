@@ -7,7 +7,7 @@
  * - api.aria2.config()
  */
 
-import { AppSettings, TaskType, DouyinWork } from '../types';
+import { AppSettings, TaskType, DouyinWork, LoginRequest, RegisterRequest, ChangePasswordRequest, AuthResponse, User } from '../types';
 
 // ============================================================================
 // 配置
@@ -84,6 +84,14 @@ export interface CommentItem {
   ip_label?: string;
   is_top?: boolean;
   is_hot?: boolean;
+}
+
+/** 抖音热榜项 */
+export interface DouyinHotItem {
+  ranks: number[];
+  url: string;
+  mobileUrl: string;
+  hotValue: string;
 }
 
 // ============================================================================
@@ -171,6 +179,27 @@ export const api = {
     
     console.error('[API] 连接超时');
     return false;
+  },
+  
+  // ========================================================================
+  // 用户认证
+  // ========================================================================
+  auth: {
+    /** 用户注册 */
+    register: (data: RegisterRequest) => 
+      post<AuthResponse>('/api/auth/register', data),
+    
+    /** 用户登录 */
+    login: (data: LoginRequest) => 
+      post<AuthResponse>('/api/auth/login', data),
+    
+    /** 获取当前用户信息 */
+    getCurrentUser: () => 
+      get<User>('/api/auth/me'),
+    
+    /** 修改密码 */
+    changePassword: (data: ChangePasswordRequest) => 
+      post<{ status: string; message: string }>('/api/auth/change-password', data),
   },
   
   // ========================================================================
@@ -307,11 +336,105 @@ export const api = {
         html_report?: string;
         wordcloud?: string;
       }>('/api/comment/analyze', { csv_file: csvFile, generate_report: generateReport }),
+    /** 使用 Spark 预处理评论数据 */
+    preprocess: (csvFile?: string) =>
+      post<{
+        success: boolean;
+        message: string;
+        input_file: string;
+        output_path: string;
+        total_records: number;
+        processed_records: number;
+      }>('/api/comment/preprocess', { csv_file: csvFile }),
     /** 获取最新的分析报告 */
     getAnalysisReport: (reportType: 'html' | 'wordcloud' = 'html') =>
       get<{ file_path: string; filename: string; created_at: string }>(
         `/api/comment/analysis-report?report_type=${reportType}`
       ),
+  },
+
+  // ========================================================================
+  // 热搜
+  // ========================================================================
+  hot: {
+    /** 获取抖音热榜 */
+    douyin: () => get<Record<string, DouyinHotItem>>('/api/hot/douyin'),
+    /** 刷新抖音热榜到数据库 */
+    douyinRefreshDb: () => post<{ success: boolean; count: number; videos_count: number; message: string }>('/api/hot/douyin/refresh-db'),
+    /** 从数据库获取抖音热榜 */
+    douyinFromDb: (limit = 30) => get<{ success: boolean; from_db: boolean; data: any[]; is_stale?: boolean; time_ago?: string; latest_time?: string }>('/api/hot/douyin/from-db?limit=' + limit),
+    /** 获取热榜历史数据（用于热度趋势图） */
+    douyinHistory: (titleLimit = 10) => get<{ success: boolean; times: string[]; series: any[]; error?: string }>('/api/hot/douyin/history?title_limit=' + titleLimit),
+  },
+
+  // ========================================================================
+  // 热榜评论
+  // ========================================================================
+  hotComment: {
+    /** 爬取热榜视频评论 */
+    crawl: (params: { 
+      video_count: number; 
+      comments_per_video: number; 
+      save_to_csv: boolean; 
+      save_to_db?: boolean; 
+      video_ids?: string[]; 
+      video_titles?: Record<string, string>;
+      start_rank?: number; 
+      end_rank?: number; 
+    }) =>
+      post<{ success: boolean; data: any; message: string }>('/api/hot-comment/crawl', params),
+    
+    /** 数据预处理（Spark 清洗） */
+    dataPreprocess: () =>
+      post<{ success: boolean; message: string }>('/api/hot-comment/data-preprocess'),
+    
+    /** 分析热榜评论数据 */
+    analyze: (params?: { csv_files?: string[]; generate_report?: boolean }) =>
+      post<{ success: boolean; data: any; message: string }>('/api/hot-comment/analyze', params || {}),
+    
+    /** 获取评论文件列表 */
+    list: () => get<{ success: boolean; files: any[] }>('/api/hot-comment/list'),
+    
+    /** 获取分析报告 */
+    getReport: (csvFile?: string) =>
+      get<{ success: boolean; data: any }>(`/api/hot-comment/report${csvFile ? `?csv_file=${encodeURIComponent(csvFile)}` : ''}`),
+    
+    /** 从数据库获取分析结果 */
+    getAnalysisFromDb: () =>
+      get<{ success: boolean; data: any }>('/api/hot-comment/analysis/list'),
+    
+    /** 启动定时任务 */
+    startScheduler: (params: { interval_hours: number; video_count: number; comments_per_video: number; save_to_db?: boolean }) =>
+      post<{ success: boolean; message: string; data: any }>('/api/hot-comment/scheduler/start', params),
+    
+    /** 停止定时任务 */
+    stopScheduler: () =>
+      post<{ success: boolean; message: string }>('/api/hot-comment/scheduler/stop'),
+    
+    /** 获取定时任务状态 */
+    getSchedulerStatus: () =>
+      get<{ success: boolean; data: any }>('/api/hot-comment/scheduler/status'),
+    
+    /** 数据库相关 API */
+    database: {
+      /** 初始化数据库 */
+      init: () => post<{ success: boolean; message: string }>('/api/hot-comment/database/init'),
+      
+      /** 获取数据库状态 */
+      getStatus: () => get<{ success: boolean; data: any; message: string }>('/api/hot-comment/database/status'),
+      
+      /** 获取评论数据 */
+      getComments: (params?: { aweme_id?: string; limit?: number; offset?: number; order_by?: string }) =>
+        get<{ success: boolean; data: any; message: string }>(
+          `/api/hot-comment/database/comments?aweme_id=${params?.aweme_id || ''}&limit=${params?.limit || 100}&offset=${params?.offset || 0}&order_by=${params?.order_by || 'digg_count'}`
+        ),
+      
+      /** 获取统计信息 */
+      getStatistics: () => get<{ success: boolean; data: any; message: string }>('/api/hot-comment/database/statistics'),
+      
+      /** 清空数据 */
+      clear: (table?: string) => post<{ success: boolean; message: string }>(`/api/hot-comment/database/clear${table ? `?table=${table}` : ''}`),
+    },
   },
 
   // ========================================================================

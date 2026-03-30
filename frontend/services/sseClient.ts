@@ -79,14 +79,15 @@ class SSEClient {
   
   /**
    * 连接到 SSE 端点
+   * @returns 取消订阅函数
    */
-  connect(url: string): void {
+  connect(url: string): () => void {
     // 检查是否已连接或正在连接中
     if (this.eventSource) {
       const state = this.eventSource.readyState;
       if (state === EventSource.OPEN || state === EventSource.CONNECTING) {
         console.warn('[SSE] 已连接或正在连接中，忽略重复连接');
-        return;
+        return () => {};
       }
     }
     
@@ -128,6 +129,11 @@ class SSEClient {
         console.log('[SSE] 连接已关闭');
         this.handleReconnect();
       }
+    };
+    
+    // 返回取消订阅函数
+    return () => {
+      this.disconnect();
     };
   }
   

@@ -4,6 +4,8 @@
 提供系统相关功能接口，如剪贴板访问和打开外部链接。
 """
 
+import os
+import subprocess
 import webbrowser
 from typing import Any, Dict
 
@@ -107,33 +109,32 @@ def cookie_login() -> Dict[str, Any]:
     """
     通过登录获取 Cookie
 
-    打开抖音登录窗口，引导用户登录后自动获取 Cookie。
-    仅在 GUI 模式下可用。
+    打开抖音登录页面，引导用户登录后手动获取 Cookie。
     """
-    logger.info("🔐 开始通过登录获取 Cookie...")
-
+    logger.info("[START] 开始通过登录获取 Cookie...")
+    
     try:
         result = get_cookie_by_login()
-
+        
         if result.success:
-            logger.success("✓ Cookie 登录获取成功")
+            logger.success("[OK] Cookie 登录获取成功")
             return {
                 "success": True,
                 "cookie": result.cookie,
                 "user_agent": result.user_agent,
-                "error": "",
+                "error": result.error,
             }
         else:
-            logger.warning(f"✗ Cookie 登录获取失败: {result.error}")
+            logger.warning(f"[ERROR] Cookie 登录获取失败：{result.error}")
             return {
                 "success": False,
                 "cookie": "",
                 "user_agent": "",
                 "error": result.error,
             }
-
+            
     except Exception as e:
-        logger.error(f"✗ Cookie 登录获取异常: {e}")
+        logger.error(f"[ERROR] Cookie 登录获取异常：{e}")
         return {
             "success": False,
             "cookie": "",

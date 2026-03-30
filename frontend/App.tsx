@@ -1,10 +1,12 @@
-
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AuthModal } from './components/AuthModal';
 import { DetailModal } from './components/DetailModal';
 import { DownloadPanel } from './components/DownloadPanel';
 import { ErrorBoundary, LightErrorBoundary } from './components/ErrorBoundary';
+import { HotCommentAnalyzer } from './components/HotCommentAnalyzer';
+import { HotCommentDashboard } from './components/HotCommentDashboard';
+import { HotSearchDashboard } from './components/HotSearchDashboard';
 import { LogPanel } from './components/LogPanel';
-import { SearchFilter, FilterSettings } from './components/SearchFilter';
 import { SettingsModal } from './components/SettingsModal';
 import { Sidebar } from './components/Sidebar';
 import { ToastContainer, toast } from './components/Toast';
@@ -14,11 +16,12 @@ import { useAria2Download } from './hooks/useAria2Download';
 import { bridge } from './services/bridge';
 import { sseClient, TaskResultEvent, TaskStatusEvent, TaskErrorEvent } from './services/sseClient';
 import { logger } from './services/logger';
-import { DouyinWork, TaskType } from './types';
+import { DouyinWork, TaskType, User } from './types';
 
 // 延迟加载虚拟滚动库（这些库比较大）
 import {
   ChevronDown, ChevronUp,
+  Download,
   Infinity as InfinityIcon, Layers,
   Loader2,
   Search,
@@ -43,7 +46,7 @@ interface RowData {
 
 /**
  * 创建行数据的辅助函数
- * 使用memoize-one确保只在依赖项变化时重新创建，避免不必要的重渲染
+ * 使用 memoize-one 确保只在依赖项变化时重新创建，避免不必要的重渲染
  */
 const createItemData = memoize(
   (
@@ -78,11 +81,11 @@ const createItemData = memoize(
  * @returns 列数
  */
 const getColumnCount = (width: number) => {
-  if (width >= 1920) return 7; // 超大屏幕
-  if (width >= 1600) return 6; // 大屏幕
-  if (width >= 1280) return 5; // xl 标准窗口
-  if (width >= 1024) return 4; // lg 中等屏幕
-  if (width >= 768) return 3;  // md 平板
+  if (width >= 1920) return 5; // 超大屏幕
+  if (width >= 1600) return 4; // 大屏幕
+  if (width >= 1280) return 4; // xl 标准窗口
+  if (width >= 1024) return 3; // lg 中等屏幕
+  if (width >= 768) return 2;  // md 平板
   return 2;                     // 小屏幕/手机
 };
 
@@ -91,83 +94,79 @@ const getColumnCount = (width: number) => {
  * 定义在组件外部以防止每次渲染时重新挂载
  * 
  * @param index 行索引
- * @param style 由FixedSizeList提供的样式（包含位置信息）
+ * @param style 由 FixedSizeList 提供的样式（包含位置信息）
  * @param data 行数据（包含作品列表和回调函数）
  */
-const Row = ({ index, style, data }: { index: number; style: React.CSSProperties; data: RowData }) => {
+const Row: React.FC<{ index: number; style: any; data: RowData }> = ({ index, style, data }) => {
   const { items, columnCount, width, onClick } = data;
   const startIndex = index * columnCount;
-
-  // 计算每列的宽度以实现响应式布局
-  // 容器左右padding为p-8（32px * 2 = 64px）
-  const availableWidth = width - 64;
-  const gap = 12; // 进一步减小列间距
-  const itemWidth = (availableWidth - (gap * (columnCount - 1))) / columnCount;
-
-  // 获取当前行的作品列表
-  const rowItems = [];
-  for (let i = 0; i < columnCount; i++) {
-    const itemIndex = startIndex + i;
-    if (itemIndex < items.length) {
-      rowItems.push(items[itemIndex]);
-    }
-  }
+  const rowItems = items.slice(startIndex, startIndex + columnCount);
 
   return (
-    <div style={style} className="flex gap-3 px-8 box-border">
-      {rowItems.map((work: DouyinWork) => (
-        <div key={work.id} style={{ width: itemWidth }}>
-          <WorkCard
-            work={work}
-            onClick={onClick}
-          />
-        </div>
-      ))}
+    <div style={style} className="grid gap-6 p-6 box-border">
+      <div
+        className="grid gap-6 w-full"
+        style={{
+          gridTemplateColumns: `repeat(${columnCount}, minmax(0, 1fr))`,
+        }}
+      >
+        {rowItems.map((work) => (
+          <WorkCard key={work.id} work={work} onClick={() => onClick(work)} />
+        ))}
+        {/* 填充空白单元格 */}
+        {Array.from({ length: columnCount - rowItems.length }).map((_, i) => (
+          <div key={`empty-${index}-${i}`} className="invisible" />
+        ))}
+      </div>
     </div>
   );
 };
 
-/**
- * 主应用组件
- * 负责整体布局、任务采集、数据展示和下载管理
- */
-export const App: React.FC = () => {
-  // --- 任务相关状态 ---
-  const [activeTab, setActiveTab] = useState<TaskType>(TaskType.POST);  // 当前选中的任务类型
-  const [inputVal, setInputVal] = useState('');                              // 输入框的值
-  const [inputError, setInputError] = useState<string | null>(null);         // 输入验证错误信息
+// ============================================================================
+// 主组件
+// ============================================================================
 
-  // --- 采集数量限制相关状态 ---
-  const [maxCount, setMaxCount] = useState<number>(0);  // 0表示不限制数量
+export const App: React.FC = () => {
+  // --- 输入相关状态 ---
+  const [inputValue, setInputValue] = useState('');  // 当前输入框内容
+  const [inputError, setInputError] = useState(false);  // 输入框错误状态
+  const inputRef = useRef<HTMLInputElement>(null);  // 输入框 DOM 引用
+
+  // --- 任务相关状态 ---
+  const [activeTab, setActiveTab] = useState<TaskType>(TaskType.AWEME);  // 当前选中的任务类型
+  const [maxCount, setMaxCount] = useState<number>(0);  // 0 表示不限制数量
   const [showLimitMenu, setShowLimitMenu] = useState(false);  // 是否显示数量限制菜单
   const limitMenuRef = useRef<HTMLDivElement>(null);  // 数量限制菜单的引用，用于检测外部点击
 
   // --- 采集结果相关状态 ---
   const [isLoading, setIsLoading] = useState(false);  // 是否正在采集
   const [results, setResults] = useState<DouyinWork[]>([]);  // 采集结果列表
-  const [selectedWorkId, setSelectedWorkId] = useState<string | null>(null);  // 当前查看详情的作品ID
+  const [selectedWorkId, setSelectedWorkId] = useState<string | null>(null);  // 当前查看详情的作品 ID
   const [resultsTaskType, setResultsTaskType] = useState<TaskType | null>(null);  // 记录结果对应的任务类型
   const [savedInputVal, setSavedInputVal] = useState('');  // 保存采集时的输入框内容
-  const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);  // 保存当前采集任务的ID
+  const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);  // 保存当前采集任务的 ID
+  const [currentAria2Config, setCurrentAria2Config] = useState<string | null>(null);  // 保存当前任务的 aria2 配置文件路径
+
+  // --- 热榜相关状态 ---
+  const [autoCrawlVideoId, setAutoCrawlVideoId] = useState<string | null>(null);
+  const [autoCrawlTitle, setAutoCrawlTitle] = useState<string | null>(null);
+  const [dashboardRefreshTrigger, setDashboardRefreshTrigger] = useState(0);
 
   // --- 模态框状态 ---
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);  // 设置模态框是否打开
-  const [showLogs, setShowLogs] = useState(false);  // 日志面板是否显示
-  const [showWelcomeWizard, setShowWelcomeWizard] = useState(false);  // 欢迎向导是否显示
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [showLogs, setShowLogs] = useState(false);
+  const [showWelcomeWizard, setShowWelcomeWizard] = useState(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [requireAuth, setRequireAuth] = useState(true);  // 强制登录标志
 
-  // --- 筛选相关状态 ---
-  const [filters, setFilters] = useState<FilterSettings>({
-    sort_type: '0',      // 默认综合排序
-    publish_time: '0',   // 默认不限时间
-    filter_duration: '', // 默认不限时长
-    search_range: '0',   // 默认不限范围
-    content_type: '1',   // 默认视频
-  });
+  // --- 用户认证状态 ---
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [token, setToken] = useState<string | null>(null);
 
   // --- 下载管理 ---
-  // 使用Aria2下载Hook，前端直接管理下载任务
+  // 使用 Aria2 下载 Hook，前端直接管理下载任务
   const {
-    connected: aria2Connected,      // Aria2是否已连接
+    connected: aria2Connected,      // Aria2 是否已连接
     downloading: isDownloading,     // 是否正在下载
     progress: downloadProgress,     // 下载进度映射表
     downloadStats,                  // 下载统计信息
@@ -201,305 +200,285 @@ export const App: React.FC = () => {
   };
 
   /**
+   * 处理从热榜点击爬取单个视频
+   */
+  const handleAnalyzeHotItem = useCallback((videoId: string, title: string) => {
+    setAutoCrawlVideoId(videoId);
+    setAutoCrawlTitle(title);
+  }, []);
+
+  /**
+   * 处理认证成功
+   */
+  const handleAuthSuccess = useCallback((user: User, newToken: string) => {
+    setCurrentUser(user);
+    setToken(newToken);
+    setRequireAuth(false);
+    setIsAuthModalOpen(false);  // 关闭认证模态框
+    localStorage.setItem('user', JSON.stringify(user));
+    localStorage.setItem('token', newToken);
+    logger.success(`欢迎 ${user.username} 加入`);
+    toast.success('登录成功');
+  }, []);
+
+  /**
+   * 处理用户登出
+   */
+  const handleLogout = useCallback(() => {
+    localStorage.removeItem('user');
+    localStorage.removeItem('token');
+    setCurrentUser(null);
+    setToken(null);
+    setRequireAuth(true);
+    logger.info('用户已登出');
+    toast.info('已退出登录');
+  }, []);
+
+  /**
+   * 初始化时检查用户登录状态
+   */
+  useEffect(() => {
+    const storedUser = localStorage.getItem('user');
+    const storedToken = localStorage.getItem('token');
+    if (storedUser && storedToken) {
+      try {
+        const user = JSON.parse(storedUser);
+        setCurrentUser(user);
+        setToken(storedToken);
+        setRequireAuth(false);
+      } catch (e) {
+        localStorage.removeItem('user');
+        localStorage.removeItem('token');
+      }
+    }
+  }, []);
+
+  /**
    * 处理用户手动切换任务类型
    * 不清空数据，通过 resultsTaskType 控制显示
    */
   const handleTabChange = useCallback((newTab: TaskType) => {
     if (newTab !== activeTab) {
       setActiveTab(newTab);
-      // 只有非下载管理页面才清空输入框
-      if (newTab !== TaskType.DOWNLOAD_MANAGER) {
-        setInputVal('');
-      }
-      logger.info(`手动切换任务模式: ${newTab}`);
+      // 切换任务类型时，清空之前的采集结果
+      setResults([]);
+      setResultsTaskType(null);
+      setInputValue('');
+      setSelectedWorkId(null);
     }
   }, [activeTab]);
 
-  /**
-   * 当任务类型切换时，记录日志
-   */
-  useEffect(() => {
-    logger.info(`当前任务模式: ${activeTab}`);
-  }, [activeTab]);
+  // 使用 ref 保存最新的回调函数，避免 SSE 重复订阅
+  const handleTaskResultRef = React.useRef<(event: TaskResultEvent) => void>(() => {});
+  const handleTaskStatusRef = React.useRef<(event: TaskStatusEvent) => void>(() => {});
+  const handleTaskErrorRef = React.useRef<(event: TaskErrorEvent) => void>(() => {});
 
   /**
-   * 处理点击数量限制菜单外部时关闭菜单
+   * 处理 SSE 任务状态事件
    */
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (limitMenuRef.current && !limitMenuRef.current.contains(event.target as Node)) {
-        setShowLimitMenu(false);
-      }
-    };
-
-    if (showLimitMenu) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () => {
-        document.removeEventListener('mousedown', handleClickOutside);
-      };
-    }
-    return undefined;
-  }, [showLimitMenu]);
-
-  /**
-   * 初始化系统和检查首次运行
-   */
-  useEffect(() => {
-    bridge.waitForReady(30000).then(ready => {
-      if (!ready) {
-        console.error("后端服务连接超时");
-        toast.error("后端服务连接失败，请重启应用");
-        return;
-      }
-
-      // 并行检查首次运行和启动 Aria2
-      // 注意：不在这里订阅日志，改为在用户打开日志面板时订阅
-      Promise.all([
-        bridge.isFirstRun().then(isFirstRun => {
-          if (isFirstRun) {
-            setShowWelcomeWizard(true);
-          }
-        }).catch(error => {
-          console.error("检查首次运行失败:", error);
-        }),
-        // 在 API 就绪后启动 Aria2 服务
-        bridge.startAria2().catch(error => {
-          console.error("启动 Aria2 失败:", error);
-        })
-      ]);
-    }).catch(error => {
-      console.error("初始化失败:", error);
-    });
-  }, []);
-
-  /**
-   * 验证用户输入（简化版 - 只做基本验证）
-   * 具体的类型判断由后端负责
-   * @returns 验证是否通过
-   */
-  const validateInput = (): boolean => {
-    // 清理输入：去除前后空格、去除前后斜杠
-    const trimmedVal = inputVal.trim().replace(/^\/+|\/+$/g, '');
-
-    if (!trimmedVal) {
-      setInputError("请输入内容");
-      return false;
-    }
-
-    if (trimmedVal.length < 2) {
-      setInputError("输入内容过短");
-      return false;
-    }
-
-    // 搜索关键词的特殊验证
-    if (activeTab === TaskType.SEARCH) {
-      if (trimmedVal.length > 20) {
-        setInputError("搜索关键词不能超过20个字符");
-        return false;
-      }
-      // 检查是否包含特殊字符（允许中文、英文、数字、空格）
-      const hasInvalidChars = /[<>{}[\]\\\/|`~!@#$%^&*()+=;:'"?]/.test(trimmedVal);
-      if (hasInvalidChars) {
-        setInputError("搜索关键词不能包含特殊符号");
-        return false;
+  const handleTaskStatus = useCallback((event: TaskStatusEvent) => {
+    console.log('[DEBUG] 收到任务状态:', event);
+    // 如果是当前任务的状态更新
+    if (event.task_id === currentTaskId) {
+      // 如果任务已开始采集，更新状态
+      if (event.status === 'running') {
+        setIsLoading(true);
+      } else if (event.status === 'completed' || event.status === 'error') {
+        // 任务完成或出错时，停止加载状态
+        setIsLoading(false);
+        console.log('[DEBUG] 任务状态更新为:', event.status, '停止加载');
+        // 保存 aria2 配置文件路径
+        if (event.detected_type !== 'following' && event.detected_type !== 'follower') {
+          // 只有作品相关任务才有 aria2 配置
+          bridge.getAria2ConfigPath(currentTaskId || undefined).then(configPath => {
+            if (configPath) {
+              setCurrentAria2Config(configPath);
+              console.log('[DEBUG] 保存 aria2 配置文件路径:', configPath);
+            }
+          }).catch(err => {
+            console.warn('[DEBUG] 获取 aria2 配置路径失败:', err);
+          });
+        }
       }
     }
-
-    setInputError(null);
-    return true;
-  };
+  }, [currentTaskId]);
 
   /**
-   * 处理采集任务
-   * 验证输入后调用后端API开始采集，并处理各种错误情况
-   * 后端会返回检测到的类型，前端根据结果自动切换面板
+   * 处理 SSE 任务结果事件
    */
-  const handleSearch = async () => {
-    // 验证输入
-    if (!validateInput()) {
+  const handleTaskResult = useCallback((event: TaskResultEvent) => {
+    console.log('[DEBUG] 收到任务结果:', event.task_id, '数据数量:', event.data?.length || 0);
+    console.log('[DEBUG] 当前 currentTaskId:', currentTaskId);
+    console.log('[DEBUG] 数据内容:', event.data);
+    
+    // 检查是否是当前任务 - 直接使用 currentTaskId
+    if (event.task_id !== currentTaskId) {
+      console.log('[DEBUG] 忽略非当前任务的结果:', event.task_id, '(当前:', currentTaskId + ')');
       return;
     }
-
-    // 开始新采集时清空旧结果，记录当前面板和输入内容
-    // 这样可以确保下载时使用的是当前采集任务的配置文件
-    setResults([]);
-    setResultsTaskType(activeTab);
-    setSavedInputVal(inputVal);
-
-    setIsLoading(true);
-    setShowLimitMenu(false); // 关闭数量限制菜单
-
-    // 用于存储当前任务ID
-    let taskId: string | null = null;
-
-    // 订阅 SSE 事件
-    const unsubResult = sseClient.onTaskResult((event: TaskResultEvent) => {
-      if (taskId && event.task_id === taskId) {
-        // 实时追加新采集到的结果
-        setResults(prev => [...prev, ...(event.data || [])]);
-        logger.info(`已采集 ${event.total} 条数据`);
+    
+    console.log('[INFO] 处理当前任务', event.task_id, '的结果');
+    
+    // 追加新的采集结果
+    setResults(prev => {
+      // 确保 event.data 存在且是数组
+      const works = event.data || [];
+      if (!Array.isArray(works)) {
+        console.warn('[WARN] 收到非数组格式的任务结果数据');
+        return prev;
       }
-    });
-
-    const unsubStatus = sseClient.onTaskStatus((event: TaskStatusEvent) => {
-      if (taskId && event.task_id === taskId && event.status === 'completed') {
-        // 采集完成
-        setIsLoading(false);
-        setCurrentTaskId(taskId);
-        logger.info(`保存任务ID: ${taskId}`);
-
-        // 根据后端检测到的类型自动切换面板
-        if (event.detected_type && event.detected_type !== activeTab) {
-          const detectedType = event.detected_type as TaskType;
-          setActiveTab(detectedType);
-          setResultsTaskType(detectedType);
-          logger.info(`后端识别类型: ${event.detected_type}，自动切换面板`);
-        }
-
-        if (event.total && event.total > 0) {
-          logger.success(`采集成功，共获取到 ${event.total} 条数据`);
-          toast.success(`采集成功，共获取到 ${event.total} 条数据`);
-        } else {
-          // 区分增量采集和普通采集
-          if (event.is_incremental) {
-            logger.info("✓ 增量采集完成，暂无新作品");
-            toast.info("增量采集完成，暂无新作品（已是最新状态）");
-          } else {
-            logger.info("采集完成，但未获取到数据");
-            toast.info("采集完成，但未获取到数据，请检查链接是否正确或cookie是否有效");
-          }
-        }
-
-        // 清理订阅
-        unsubResult();
-        unsubStatus();
-        unsubError();
-      }
-    });
-
-    const unsubError = sseClient.onTaskError((event: TaskErrorEvent) => {
-      if (taskId && event.task_id === taskId) {
-        // 采集失败
-        setIsLoading(false);
-        const errorMsg = event.error || '未知错误';
-        logger.error(`任务执行失败: ${errorMsg}`);
-
-        // 根据错误类型提供友好的提示信息
-        if (errorMsg.includes("cookie") || errorMsg.includes("Cookie")) {
-          toast.error("Cookie可能已失效，请在设置中更新Cookie");
-        } else if (errorMsg.includes("网络") || errorMsg.includes("连接")) {
-          toast.error("网络连接失败，请检查网络设置");
-        } else {
-          toast.error(`采集失败: ${errorMsg}`);
-        }
-
-        // 清理订阅
-        unsubResult();
-        unsubStatus();
-        unsubError();
-      }
-    });
-
-    try {
-      // 调用后端API开始采集任务
-      // 搜索任务传递筛选参数
-      const taskFilters = activeTab === TaskType.SEARCH ? filters : undefined;
-      const response = await bridge.startTask(
-        activeTab, 
-        inputVal, 
-        maxCount,
-        taskFilters
+      // 过滤掉已存在的作品（根据 ID 去重）
+      const newWorks = works.filter(
+        newWork => !prev.some(existing => existing.id === newWork.id)
       );
+      console.log('[INFO] 新增', newWorks.length, '条数据，当前总数:', prev.length + newWorks.length);
+      console.log('[INFO] 新增数据详情:', newWorks);
+      return [...prev, ...newWorks];
+    });
+    
+    // 更新任务类型和输入值
+    setResultsTaskType(activeTab);
+    setSavedInputVal(inputValue);
+  }, [currentTaskId, activeTab, inputValue]);
 
-      // 保存任务ID，用于匹配 SSE 事件
-      taskId = response.task_id;
-      logger.info(`采集任务已启动，任务ID: ${taskId}`);
-
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      logger.error(`任务启动失败: ${errorMsg}`);
-
-      // 根据错误类型提供友好的提示信息
-      if (errorMsg.includes("Backend not available")) {
-        toast.error("后端服务不可用，请确保主程序正在运行");
-      } else if (errorMsg.includes("cookie")) {
-        toast.error("Cookie可能已失效，请在设置中更新Cookie");
-      } else if (errorMsg.includes("网络") || errorMsg.includes("连接")) {
-        toast.error("网络连接失败，请检查网络设置");
-      } else {
-        toast.error(`采集失败: ${errorMsg}`);
-      }
+  /**
+   * 处理 SSE 任务错误事件
+   */
+  const handleTaskError = useCallback((event: TaskErrorEvent) => {
+    if (event.task_id === currentTaskId) {
       setIsLoading(false);
-      
-      // 清理 SSE 订阅
+      toast.error(`任务失败：${event.error}`);
+      logger.error(`任务 ${event.task_id} 失败：${event.error}`);
+    }
+  }, [currentTaskId]);
+
+  // 更新 ref 中的回调函数
+  useEffect(() => {
+    handleTaskResultRef.current = handleTaskResult;
+    handleTaskStatusRef.current = handleTaskStatus;
+    handleTaskErrorRef.current = handleTaskError;
+  }, [handleTaskResult, handleTaskStatus, handleTaskError]);
+
+  /**
+   * 监听 SSE 消息（只连接一次，不重复订阅）
+   */
+  useEffect(() => {
+    // 连接 SSE 服务器（只在组件挂载时连接一次）
+    sseClient.connect('http://localhost:8000/api/events');
+
+    // 创建稳定的包装函数
+    const wrappedHandleResult = (event: TaskResultEvent) => handleTaskResultRef.current(event);
+    const wrappedHandleStatus = (event: TaskStatusEvent) => handleTaskStatusRef.current(event);
+    const wrappedHandleError = (event: TaskErrorEvent) => handleTaskErrorRef.current(event);
+
+    // 订阅事件（只订阅一次）
+    const unsubResult = sseClient.onTaskResult(wrappedHandleResult);
+    const unsubStatus = sseClient.onTaskStatus(wrappedHandleStatus);
+    const unsubError = sseClient.onTaskError(wrappedHandleError);
+
+    // 组件卸载时取消订阅（但不断开连接，因为其他组件可能还需要）
+    return () => {
       unsubResult();
       unsubStatus();
       unsubError();
-    }
-  };
-
-
+    };
+  }, []); // 空依赖数组，只执行一次
 
   /**
-   * 处理点击作品卡片
-   * 打开详情模态框
+   * 监听下载完成事件，完成后自动停止轮询
+   */
+  useEffect(() => {
+    if (!isDownloading) {
+      // 下载完成后停止轮询
+      // downloadProgress 会在下载完成后自动清空
+    }
+  }, [isDownloading]);
+
+  /**
+   * 开始采集任务
+   */
+  const handleSearch = useCallback(async () => {
+    if (!inputValue.trim()) {
+      setInputError(true);
+      inputRef.current?.focus();
+      return;
+    }
+
+    setInputError(false);
+    setIsLoading(true);
+    setResults([]);  // 清空旧数据
+    setSelectedWorkId(null);
+
+    try {
+      // 启动任务
+      const target = inputValue.trim();
+      const result = await bridge.startTask(activeTab, target, maxCount || 0);
+
+      if (result.task_id) {
+        setCurrentTaskId(result.task_id);
+        logger.info(`任务 ${result.task_id} 已创建`);
+      } else {
+        throw new Error('任务创建失败');
+      }
+    } catch (error: any) {
+      setIsLoading(false);
+      toast.error(`创建任务失败：${error.message}`);
+      logger.error(`创建任务失败：${error.message}`);
+    }
+  }, [inputValue, activeTab, maxCount]);
+
+  /**
+   * 处理输入框键盘事件
+   */
+  const handleInputKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && !isLoading) {
+      handleSearch();
+    }
+  }, [handleSearch, isLoading]);
+
+  /**
+   * 处理作品点击事件
    */
   const handleWorkClick = useCallback((work: DouyinWork) => {
     setSelectedWorkId(work.id);
   }, []);
 
-
-
   /**
-   * 一键下载全部函数
-   * 直接从后端获取douyin.aria2_conf配置文件路径
+   * 批量下载当前结果
    */
-  const handleBatchDownload = async () => {
+  const handleBatchDownload = useCallback(async () => {
     if (results.length === 0) {
-      toast.error('没有可下载的内容');
+      toast.info('暂无可下载的作品');
       return;
     }
 
-    if (!aria2Connected) {
-      toast.error('Aria2下载服务未连接，请检查配置');
-      logger.error('✗ Aria2未连接，无法下载');
+    if (!currentAria2Config) {
+      toast.error('没有找到下载配置文件，请先完成采集');
       return;
     }
 
     try {
-      logger.info(`📦 开始一键下载全部 (${results.length} 个作品)`);
+      await batchDownloadFromConfig(currentAria2Config);
 
-      // 使用当前采集任务的task_id获取配置文件路径
-      const configFilePath = await bridge.getAria2ConfigPath(currentTaskId || undefined);
-      logger.info(`使用配置文件: ${configFilePath}`);
-
-      // 使用hook方法读取配置文件并批量下载
-      await batchDownloadFromConfig(configFilePath);
-
-    } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error);
-      logger.error(`✗ 批量下载异常: ${errorMsg}`);
-      toast.error(`下载失败: ${errorMsg}`);
+      toast.success(`已添加 ${results.length} 个作品到下载队列`);
+      logger.info(`批量下载已启动：${results.length} 个作品`);
+    } catch (error: any) {
+      toast.error(`批量下载失败：${error.message}`);
+      logger.error(`批量下载失败：${error.message}`);
     }
-  };
-
-
+  }, [results, currentAria2Config, batchDownloadFromConfig]);
 
   /**
    * 根据当前任务类型返回输入框的占位符文本
    */
   const getPlaceholder = () => {
     switch (activeTab) {
-      case TaskType.SEARCH:
-        return '输入关键词搜索，例如：美食、旅游、科技...';
       case TaskType.AWEME:
-        return '支持：长链接、短链接、纯数字ID';
-      case TaskType.HASHTAG:
-        return '支持：长链接、短链接、纯数字ID';
+        return '支持：长链接、短链接、纯数字 ID';
       case TaskType.MUSIC:
-        return '支持：长链接、短链接、纯数字ID';
+        return '支持：长链接、短链接、纯数字 ID';
       case TaskType.MIX:
-        return '支持：长链接、短链接、纯数字ID';
+        return '支持：长链接、短链接、纯数字 ID';
       case TaskType.POST:
         return '支持：长链接、短链接、SecUid';
       case TaskType.FAVORITE:
@@ -511,395 +490,308 @@ export const App: React.FC = () => {
     }
   };
 
-
-
   /**
    * 增加采集数量限制
    */
   const incrementMaxCount = () => setMaxCount(prev => (prev || 0) + 1);
 
   /**
-   * 减少采集数量限制（最小为0）
+   * 减少采集数量限制（最小为 0）
    */
   const decrementMaxCount = () => setMaxCount(prev => Math.max(0, (prev || 0) - 1));
 
   return (
     <ErrorBoundary
       onError={(error, errorInfo) => {
-        // 记录错误到日志系统
-        logger.error(`应用错误: ${error.message}`);
+        logger.error(`应用错误：${error.message}`);
         console.error('错误详情:', error, errorInfo);
       }}
     >
-      <div className="flex h-screen bg-[#F8F9FB] overflow-hidden font-sans text-gray-900 selection:bg-blue-100 selection:text-blue-900">
-        <LightErrorBoundary fallbackMessage="侧边栏加载失败">
-          <Sidebar
-            activeTab={activeTab}
-            setActiveTab={handleTabChange}
-            onOpenSettings={() => setIsSettingsOpen(true)}
-            showLogs={showLogs}
-            setShowLogs={setShowLogs}
-            isDownloading={isDownloading}
-            downloadStats={downloadStats}
-          />
-        </LightErrorBoundary>
+      {/* 强制登录界面 */}
+      {requireAuth && (
+        <div className="fixed inset-0 bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex items-center justify-center z-50">
+          <div className="w-full max-w-md p-8">
+            <AuthModal
+              isOpen={true}
+              onClose={() => {}}
+              onAuthSuccess={handleAuthSuccess}
+            />
+          </div>
+        </div>
+      )}
 
-        {/* 根据activeTab显示不同的主内容区域 */}
-        {activeTab === TaskType.DOWNLOAD_MANAGER ? (
-          <LightErrorBoundary fallbackMessage="下载面板加载失败">
-            <DownloadPanel isOpen={true} showLogs={showLogs} />
-          </LightErrorBoundary>
-        ) : (
-          <main className="flex-1 flex flex-col min-w-0 relative">
-            {/* Sticky Header */}
-            <div className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-gray-200/60 shadow-sm transition-all">
-              <div className="max-w-7xl mx-auto w-full px-8 py-5">
-                {(activeTab as TaskType) !== TaskType.DOWNLOAD_MANAGER && (
-                  <>
-                    <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2 tracking-tight">
-                      {activeTab === TaskType.SEARCH && <Search size={24} className="text-blue-500" />}
-                      {activeTab === TaskType.SEARCH ? '关键词搜索' : '数据采集'}
-                    </h2>
+      {/* 主界面 */}
+      {!requireAuth && (
+        <>
+          <div className="flex h-screen bg-[#F8F9FB] overflow-hidden font-sans text-gray-900 selection:bg-blue-100 selection:text-blue-900">
+            <LightErrorBoundary fallbackMessage="侧边栏加载失败">
+              <Sidebar
+                activeTab={activeTab}
+                setActiveTab={handleTabChange}
+                onOpenSettings={() => setIsSettingsOpen(true)}
+                showLogs={showLogs}
+                setShowLogs={setShowLogs}
+                isDownloading={isDownloading}
+                downloadStats={downloadStats}
+                currentUser={currentUser}
+                onOpenAuth={() => setIsAuthModalOpen(true)}
+                onLogout={handleLogout}
+              />
+            </LightErrorBoundary>
 
-                    {/* 搜索框 */}
-                    <div className="flex gap-3">
-                      <div className="flex-1">
-                        <div className={`relative flex group shadow-sm rounded-xl border transition-all bg-white z-20 ${inputError ? 'border-red-500 focus:border-red-500 focus:ring-red-500/20' : 'border-gray-200 focus-within:ring-2 focus-within:ring-blue-500/20 focus-within:border-blue-500'
-                          }`}>
-                          <div className="pl-4 flex items-center pointer-events-none bg-transparent">
-                            <Search className={`h-5 w-5 transition-colors ${inputError ? 'text-red-500' : 'text-gray-400 group-focus-within:text-blue-500'
-                              }`} />
-                          </div>
-                          <input
-                              type="text"
-                              className="block flex-1 px-4 py-3.5 leading-5 bg-transparent placeholder-gray-400 focus:outline-none"
-                              placeholder={getPlaceholder()}
-                              value={resultsTaskType === activeTab ? savedInputVal : inputVal}
-                              onChange={(e) => {
-                                // 自动清理输入：去除多余空格
-                                const cleanedValue = e.target.value.replace(/\s+/g, ' ');
-                                setInputVal(cleanedValue);
-                                // 当用户开始输入新内容时，解绑resultsTaskType与activeTab，显示当前输入值
-                                if (resultsTaskType === activeTab) {
-                                  setResultsTaskType(null);
-                                }
+            {/* 根据 activeTab 显示不同的主内容区域 */}
+            {activeTab === TaskType.DOWNLOAD_MANAGER ? (
+              <LightErrorBoundary fallbackMessage="下载面板加载失败">
+                <DownloadPanel isOpen={true} showLogs={showLogs} />
+              </LightErrorBoundary>
+            ) : activeTab === TaskType.HOT_SEARCH ? (
+              <LightErrorBoundary fallbackMessage="热榜页面加载失败">
+                <HotSearchDashboard setActiveTab={handleTabChange} onAnalyzeHotItem={handleAnalyzeHotItem} />
+              </LightErrorBoundary>
+            ) : activeTab === TaskType.HOT_COMMENT ? (
+              <LightErrorBoundary fallbackMessage="热榜评论分析页面加载失败">
+                <HotCommentAnalyzer setActiveTab={handleTabChange} autoCrawlVideoId={autoCrawlVideoId} autoCrawlTitle={autoCrawlTitle} />
+              </LightErrorBoundary>
+            ) : activeTab === TaskType.HOT_COMMENT_DASHBOARD ? (
+              <LightErrorBoundary fallbackMessage="热榜评论大屏页面加载失败">
+                <HotCommentDashboard refreshTrigger={dashboardRefreshTrigger} />
+              </LightErrorBoundary>
+            ) : (
+              <main className="flex-1 flex flex-col min-w-0 relative">
+                {/* Sticky Header */}
+                <div className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-gray-200/60 shadow-sm transition-all">
+                  <div className="max-w-7xl mx-auto w-full px-8 py-5">
+                    {(activeTab as TaskType) !== TaskType.DOWNLOAD_MANAGER && (
+                      <>
+                        <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2 tracking-tight">
+                          数据采集
+                        </h2>
 
-                                // 清除输入错误
-                                if (inputError) {
-                                  setInputError(null);
-                                }
-                              }}
-                              onPaste={(e) => {
-                                // 粘贴时自动清理：去除所有空格和前后斜杠
-                                e.preventDefault();
-                                const pastedText = e.clipboardData.getData('text');
-                                const cleanedText = pastedText.trim().replace(/\s+/g, '').replace(/^\/+|\/+$/g, '');
-                                setInputVal(cleanedText);
-                                // 当用户粘贴新内容时，解绑resultsTaskType与activeTab，显示当前输入值
-                                if (resultsTaskType === activeTab) {
-                                  setResultsTaskType(null);
-                                }
-
-                                // 清除输入错误
-                                if (inputError) {
-                                  setInputError(null);
-                                }
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  handleSearch();
-                                }
-                              }}
-                            />
-
-                          {/* 粘贴按钮 - 通过后端读取剪贴板，无需浏览器权限 */}
-                          <button
-                            onClick={async () => {
-                              try {
-                                // 通过后端读取剪贴板（无需浏览器权限）
-                                const text = await bridge.getClipboardText();
-
-                                if (!text) {
-                                  toast.info('剪贴板为空');
-                                  return;
-                                }
-
-                                // 清理文本：去除空格和斜杠
-                                const cleanedText = text.trim().replace(/\s+/g, '').replace(/^\/+|\/+$/g, '');
-                                setInputVal(cleanedText);
-                                // 当用户点击粘贴按钮时，解绑resultsTaskType与activeTab，显示当前输入值
-                                if (resultsTaskType === activeTab) {
-                                  setResultsTaskType(null);
-                                }
-
-                                if (inputError) {
-                                  setInputError(null);
-                                }
-
-                                toast.success('已粘贴剪贴板内容');
-                              } catch (err) {
-                                logger.error(`粘贴失败: ${err}`);
-                                toast.error('粘贴失败，请手动输入');
-                              }
-                            }}
-                            className="px-3 text-gray-400 hover:text-blue-500 hover:bg-blue-50 transition-colors rounded-lg"
-                            title="一键粘贴剪贴板内容"
-                          >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                            </svg>
-                          </button>
-
-                          {/* Max Count Dropdown Trigger - 仅在非单个作品采集时显示 */}
-                          {activeTab !== TaskType.AWEME && (
-                            <>
-                              <div className="relative border-l border-gray-100" ref={limitMenuRef}>
+                        {/* 搜索框 */}
+                        <div className="flex gap-3">
+                          <div className="flex-1">
+                            <div className={`relative flex group shadow-sm rounded-xl border transition-all bg-white z-20 ${inputError ? 'border-red-500 focus:border-red-500 focus:ring-red-500/20' : 'border-gray-200 focus-within:ring-2 focus-within:ring-blue-500/20 focus-within:border-blue-500'
+                              }`}>
+                              <div className="pl-4 flex items-center pointer-events-none bg-transparent">
+                                <Search className={`h-5 w-5 transition-colors ${inputError ? 'text-red-500' : 'text-gray-400 group-focus-within:text-blue-500'
+                                  }`} />
+                              </div>
+                              <input
+                                ref={inputRef}
+                                type="text"
+                                className={`w-full px-4 py-3 bg-transparent border-0 outline-none text-gray-700 placeholder-gray-400 rounded-xl ${inputError ? 'text-red-500 placeholder-red-300' : ''
+                                  }`}
+                                placeholder={getPlaceholder()}
+                                value={inputValue}
+                                onChange={(e) => {
+                                  setInputValue(e.target.value);
+                                  if (inputError) setInputError(false);
+                                }}
+                                onKeyDown={handleInputKeyDown}
+                                disabled={isLoading}
+                              />
+                              <div className="pr-2 flex items-center gap-1">
                                 <button
-                                  onClick={() => setShowLimitMenu(!showLimitMenu)}
-                                  className="h-full px-4 flex items-center gap-2 hover:bg-gray-50 transition-colors text-sm font-medium text-gray-600 outline-none"
+                                  className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                                  onClick={async () => {
+                                    try {
+                                      const text = await bridge.getClipboardText();
+                                      if (text) {
+                                        setInputValue(text);
+                                        if (inputError) setInputError(false);
+                                        toast.success('剪贴板内容已粘贴');
+                                      }
+                                    } catch (error: any) {
+                                      toast.error('读取剪贴板失败');
+                                    }
+                                  }}
+                                  title="从剪贴板粘贴"
                                 >
-                                  <span className="text-xs text-gray-400">数量</span>
-                                  <span className={`flex items-center gap-1 ${maxCount === 0 ? 'text-indigo-600 font-bold' : 'text-gray-700'}`}>
-                                    {maxCount === 0 ? <InfinityIcon size={16} /> : maxCount}
-                                  </span>
-                                  <ChevronDown size={14} className={`text-gray-400 transition-transform ${showLimitMenu ? 'rotate-180' : ''}`} />
+                                  <Download className="h-5 w-5 text-gray-400 rotate-180" />
                                 </button>
+                              </div>
+                            </div>
+                          </div>
 
-                              {/* Dropdown Menu */}
+                          <div className="flex items-center gap-3">
+                            {/* 数量限制 */}
+                            <div className="relative" ref={limitMenuRef}>
+                              <button
+                                className="px-4 py-3 bg-white border border-gray-200 rounded-xl hover:border-blue-400 hover:bg-blue-50 transition-all flex items-center gap-2 shadow-sm"
+                                onClick={() => setShowLimitMenu(!showLimitMenu)}
+                                title="设置采集数量"
+                              >
+                                <Layers className="h-5 w-5 text-gray-500" />
+                                <span className="font-medium text-gray-700">
+                                  {maxCount === 0 ? <InfinityIcon className="h-5 w-5" /> : maxCount}
+                                </span>
+                                <ChevronDown className={`h-4 w-4 text-gray-400 transition-transform ${showLimitMenu ? 'rotate-180' : ''}`} />
+                              </button>
+
+                              {/* 数量限制下拉菜单 */}
                               {showLimitMenu && (
-                                <div className="absolute top-full right-0 mt-2 w-56 bg-white rounded-xl shadow-2xl border border-gray-200 z-20 px-4 py-3.5 animate-in fade-in slide-in-from-top-2 duration-200">
-                                  <h4 className="text-xs font-medium text-gray-500 mb-2.5 flex items-center gap-2">
-                                    <Layers size={12} /> 采集数量限制
-                                  </h4>
-
-                                  <div className="grid grid-cols-2 gap-2 mb-3">
-                                    <button
-                                      onClick={() => { setMaxCount(0); setShowLimitMenu(false); }}
-                                      className={`flex items-center justify-center gap-2 py-1.5 rounded-lg text-xs border transition-all ${maxCount === 0
-                                        ? 'bg-indigo-50 border-indigo-200 text-indigo-700 font-semibold'
-                                        : 'border-gray-200 text-gray-600 hover:bg-gray-50'
-                                        }`}
-                                    >
-                                      <InfinityIcon size={12} /> 全部
-                                    </button>
-                                    {[20, 50, 100].map(num => (
-                                      <button
-                                        key={num}
-                                        onClick={() => { setMaxCount(num); setShowLimitMenu(false); }}
-                                        className={`py-1.5 rounded-lg text-xs border transition-all ${maxCount === num
-                                          ? 'bg-blue-50 border-blue-200 text-blue-700 font-semibold'
-                                          : 'border-gray-200 text-gray-600 hover:bg-gray-50'
-                                          }`}
-                                      >
-                                        {num} 条
-                                      </button>
-                                    ))}
+                                <div className="absolute right-0 mt-2 w-48 bg-white rounded-xl shadow-lg border border-gray-100 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
+                                  <div className="px-4 py-3 border-b border-gray-100">
+                                    <div className="text-sm font-medium text-gray-700">采集数量限制</div>
+                                    <div className="text-xs text-gray-500 mt-1">设置单次采集的最大作品数量</div>
                                   </div>
-
-                                  <div className="relative group/input">
-                                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 pointer-events-none">自定义</span>
-                                    <input
-                                      type="number"
-                                      min="1"
-                                      value={maxCount === 0 ? '' : maxCount}
-                                      onChange={(e) => {
-                                        const val = parseInt(e.target.value);
-                                        setMaxCount(isNaN(val) ? 0 : val);
-                                      }}
-                                      placeholder="输入数量"
-                                      className="w-full pl-14 pr-8 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded-lg text-gray-700 placeholder-gray-400 focus:outline-none focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                                    />
-                                    <div className="absolute right-1 top-1 bottom-1 flex flex-col w-5 border-l border-gray-200">
+                                  <div className="p-3">
+                                    <div className="flex items-center justify-between gap-2">
                                       <button
-                                        onClick={incrementMaxCount}
-                                        className="h-1/2 flex items-center justify-center hover:bg-gray-100 text-gray-500 rounded-tr-md transition-colors"
-                                      >
-                                        <ChevronUp size={10} />
-                                      </button>
-                                      <button
+                                        className="flex-1 py-2 px-3 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors flex items-center justify-center"
                                         onClick={decrementMaxCount}
-                                        className="h-1/2 flex items-center justify-center hover:bg-gray-100 text-gray-500 rounded-br-md border-t border-gray-100 transition-colors"
+                                        disabled={!maxCount || maxCount <= 1}
                                       >
-                                        <ChevronDown size={10} />
+                                        <ChevronDown className="h-5 w-5 text-gray-600" />
+                                      </button>
+                                      <div className="flex-1 text-center">
+                                        <div className="text-lg font-bold text-gray-700">
+                                          {maxCount === 0 ? '∞' : maxCount}
+                                        </div>
+                                        <div className="text-xs text-gray-500">
+                                          {maxCount === 0 ? '不限制' : '作品数量'}
+                                        </div>
+                                      </div>
+                                      <button
+                                        className="flex-1 py-2 px-3 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors flex items-center justify-center"
+                                        onClick={incrementMaxCount}
+                                      >
+                                        <ChevronUp className="h-5 w-5 text-gray-600" />
                                       </button>
                                     </div>
+                                    {maxCount !== 0 && (
+                                      <button
+                                        className="w-full mt-3 py-2 px-3 bg-blue-50 hover:bg-blue-100 text-blue-600 rounded-lg transition-colors text-sm font-medium"
+                                        onClick={() => setMaxCount(0)}
+                                      >
+                                        设为不限制
+                                      </button>
+                                    )}
                                   </div>
                                 </div>
                               )}
-                              </div>
+                            </div>
 
-                              {/* 搜索筛选按钮 - 仅在搜索模式下显示 */}
-                              {activeTab === TaskType.SEARCH && (
-                                <SearchFilter
-                                  filters={filters}
-                                  onFilterChange={setFilters}
-                                />
+                            <button
+                              className="px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-medium rounded-xl transition-all duration-200 flex items-center gap-2 shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                              onClick={handleSearch}
+                              disabled={isLoading || !inputValue.trim()}
+                            >
+                              {isLoading ? (
+                                <Loader2 size={20} className="animate-spin" />
+                              ) : (
+                                <Sparkles size={20} />
                               )}
-                            </>
-                          )}
+                              <span>{isLoading ? '采集中...' : '开始采集'}</span>
+                            </button>
+                          </div>
                         </div>
-                        {inputError && (
-                          <p className="mt-1.5 text-xs text-red-500 pl-1">{inputError}</p>
-                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* Scrollable Content */}
+                <div className="flex-1 overflow-y-auto">
+                  <div className="max-w-7xl mx-auto w-full px-8 py-6">
+                    {isLoading ? (
+                      <div className="flex flex-col items-center justify-center py-20">
+                        <Loader2 size={48} className="animate-spin text-blue-500 mb-4" />
+                        <p className="text-gray-500 font-medium">正在采集数据...</p>
                       </div>
-
-                      <button
-                        onClick={handleSearch}
-                        disabled={isLoading || !inputVal.trim()}
-                        className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-8 py-3.5 rounded-xl font-medium shadow-lg shadow-blue-500/30 transition-all active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed disabled:shadow-none flex items-center gap-2 z-20"
-                      >
-                        {isLoading ? <Loader2 className="animate-spin" size={20} /> : <Sparkles size={20} />}
-                        {isLoading ? '采集中...' : '开始采集'}
-                      </button>
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-
-            {/* Action Bar */}
-            {results.length > 0 && resultsTaskType === activeTab && (
-              <div className="px-8 py-3 border-b border-gray-200 bg-white/50 backdrop-blur-sm flex items-center justify-between sticky top-[120px] z-20">
-                <div className="flex items-center gap-4 text-sm text-gray-600">
-                  <span className="font-semibold bg-gray-100 px-2 py-1 rounded text-gray-700">共 {results.length} 个作品</span>
+                    ) : results.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-20 text-center">
+                        <div className="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mb-6">
+                          <Search size={48} className="text-gray-400" />
+                        </div>
+                        <h3 className="text-xl font-bold text-gray-700 mb-2">暂无数据</h3>
+                        <p className="text-gray-500 max-w-md">
+                          {activeTab === TaskType.SEARCH
+                            ? '请输入关键词开始搜索，例如：美食、旅游、科技'
+                            : '请输入链接开始采集作品信息'}
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="h-full">
+                        <div className="absolute top-2 right-2 bg-blue-100 text-blue-800 px-3 py-1 rounded text-sm font-medium z-10">
+                          当前数据：{results.length} 条
+                        </div>
+                        
+                        {/* 简单渲染，不使用虚拟列表 */}
+                        <div className="p-6">
+                          <div 
+                            className="grid gap-6 w-full"
+                            style={{
+                              gridTemplateColumns: `repeat(${getColumnCount(window.innerWidth)}, minmax(0, 1fr))`,
+                            }}
+                          >
+                            {results.map((work) => (
+                              <WorkCard 
+                                key={work.id} 
+                                work={work} 
+                                onClick={() => handleWorkClick(work)} 
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
-                <div className="flex gap-3">
-                  <button
-                    onClick={handleBatchDownload}
-                    disabled={results.length === 0 || !aria2Connected}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all transform active:scale-95 border ${results.length > 0 && aria2Connected
-                      ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:from-blue-700 hover:to-indigo-700 shadow-md shadow-blue-600/20 border-transparent'
-                      : 'bg-gray-50 border-gray-200 text-gray-300 cursor-not-allowed'
-                      }`}
-                    title="将所有采集结果添加到下载队列"
-                  >
-                    <Sparkles size={16} />
-                    一键下载全部
-                  </button>
-                </div>
-              </div>
+                <LightErrorBoundary fallbackMessage="详情弹窗加载失败">
+                  <DetailModal
+                    work={selectedWork}
+                    onClose={() => setSelectedWorkId(null)}
+                    onPrev={() => navigateWork('prev')}
+                    onNext={() => navigateWork('next')}
+                    hasPrev={selectedWorkIndex > 0}
+                    hasNext={selectedWorkIndex < results.length - 1}
+                    addDownload={addDownload}
+                    startPolling={startPolling}
+                    progress={downloadProgress}
+                  />
+                </LightErrorBoundary>
+              </main>
             )}
 
-            {/* Content Area with Virtual Scroll */}
-            <div className={`flex-1 transition-all duration-300 ${showLogs ? 'mb-64' : 'mb-0'}`}>
-              {(results.length === 0 || resultsTaskType !== activeTab) && !isLoading ? (
-                // 空状态：等待任务开始
-                <div className="h-full flex flex-col items-center justify-center text-gray-400 opacity-60">
-                  <div className="w-32 h-32 bg-gray-100 rounded-full flex items-center justify-center mb-6 shadow-inner">
-                    <Search size={64} className="text-gray-300" />
-                  </div>
-                  <p className="text-xl font-medium text-gray-500">等待任务开始...</p>
-                  <p className="text-sm mt-2">请在上方输入目标链接或关键词</p>
-                </div>
-              ) : (results.length === 0 || resultsTaskType !== activeTab) && isLoading ? (
-                // 加载状态：采集中
-                <div className="h-full flex flex-col items-center justify-center">
-                  <div className="relative w-32 h-32 mb-8">
-                    {/* 外圈旋转动画 */}
-                    <div className="absolute inset-0 rounded-full border-4 border-blue-100"></div>
-                    <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-blue-500 border-r-blue-500 animate-spin"></div>
+            {/* 全局组件：Toast 容器 - 在所有面板中都显示 */}
+            <ToastContainer />
 
-                    {/* 中心图标 */}
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <Loader2 size={48} className="text-blue-500 animate-spin" style={{ animationDuration: '2s' }} />
-                    </div>
-                  </div>
+            {/* 全局组件：设置弹窗 */}
+            <LightErrorBoundary fallbackMessage="设置面板加载失败">
+              <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+            </LightErrorBoundary>
 
-                  <p className="text-xl font-semibold text-gray-700 mb-2">正在采集数据...</p>
-                  <p className="text-sm text-gray-500">请稍候，这可能需要一些时间</p>
+            {/* 全局组件：日志面板 */}
+            <LightErrorBoundary fallbackMessage="日志面板加载失败">
+              <LogPanel isOpen={showLogs} onToggle={() => setShowLogs(!showLogs)} />
+            </LightErrorBoundary>
 
-                  {/* 提示信息 */}
-                  <div className="mt-8 px-6 py-4 bg-blue-50 border border-blue-100 rounded-xl max-w-md">
-                    <div className="flex items-start gap-3">
-                      <div className="flex-shrink-0 w-5 h-5 rounded-full bg-blue-500 flex items-center justify-center mt-0.5">
-                        <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                      </div>
-                      <div className="flex-1 text-sm text-blue-700">
-                        <p className="font-medium mb-1">采集提示</p>
-                        <p className="text-blue-600">采集过程中会实时显示进度，请关注日志面板查看详细信息</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <LightErrorBoundary fallbackMessage="列表加载失败">
-                  <AutoSizer>
-                    {({ height, width }) => {
-                      const columnCount = getColumnCount(width);
-                      const rowCount = Math.ceil(results.length / columnCount);
-                      // 调整行高，增加行间距
-                      const itemHeight = 296;
-
-                      // Create item data bundle (memoized)
-                      const itemData = createItemData(
-                        results,
-                        columnCount,
-                        width,
-                        handleWorkClick
-                      );
-
-                      return (
-                        <FixedSizeList
-                          height={height}
-                          width={width}
-                          itemCount={rowCount}
-                          itemSize={itemHeight}
-                          itemData={itemData}
-                        >
-                          {Row}
-                        </FixedSizeList>
-                      );
-                    }}
-                  </AutoSizer>
-                </LightErrorBoundary>
-              )}
-            </div>
-
-            <LightErrorBoundary fallbackMessage="详情弹窗加载失败">
-              <DetailModal
-                work={selectedWork}
-                onClose={() => setSelectedWorkId(null)}
-                onPrev={() => navigateWork('prev')}
-                onNext={() => navigateWork('next')}
-                hasPrev={selectedWorkIndex > 0}
-                hasNext={selectedWorkIndex < results.length - 1}
-                addDownload={addDownload}
-                startPolling={startPolling}
-                progress={downloadProgress}
+            {/* 欢迎向导 */}
+            <LightErrorBoundary fallbackMessage="欢迎向导加载失败">
+              <WelcomeWizard
+                isOpen={showWelcomeWizard}
+                onClose={() => setShowWelcomeWizard(false)}
+                onComplete={() => {
+                  setShowWelcomeWizard(false);
+                  logger.info("欢迎向导已完成");
+                  toast.success("配置已保存，欢迎使用！");
+                }}
               />
             </LightErrorBoundary>
-          </main>
-        )}
 
-        {/* 全局组件：Toast容器 - 在所有面板中都显示 */}
-        <ToastContainer />
-
-        {/* 全局组件：设置弹窗 */}
-        <LightErrorBoundary fallbackMessage="设置面板加载失败">
-          <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
-        </LightErrorBoundary>
-
-        {/* 全局组件：日志面板 */}
-        <LightErrorBoundary fallbackMessage="日志面板加载失败">
-          <LogPanel isOpen={showLogs} onToggle={() => setShowLogs(!showLogs)} />
-        </LightErrorBoundary>
-
-        {/* 欢迎向导 */}
-        <LightErrorBoundary fallbackMessage="欢迎向导加载失败">
-          <WelcomeWizard
-            isOpen={showWelcomeWizard}
-            onClose={() => setShowWelcomeWizard(false)}
-            onComplete={() => {
-              setShowWelcomeWizard(false);
-              logger.info("欢迎向导已完成");
-              toast.success("配置已保存，欢迎使用！");
-            }}
-          />
-        </LightErrorBoundary>
-      </div>
+            {/* 认证模态框（用于侧边栏点击"用户登录"） */}
+            <LightErrorBoundary fallbackMessage="认证面板加载失败">
+              <AuthModal
+                isOpen={isAuthModalOpen}
+                onClose={() => setIsAuthModalOpen(false)}
+                onAuthSuccess={handleAuthSuccess}
+              />
+            </LightErrorBoundary>
+          </div>
+        </>
+      )}
     </ErrorBoundary>
   );
 };

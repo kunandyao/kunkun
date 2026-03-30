@@ -277,6 +277,8 @@ class LoggerService {
       this.info(message, context, 'download'),
     success: (message: string, context?: Record<string, any>) =>
       this.success(message, context, 'download'),
+    warn: (message: string, context?: Record<string, any>) =>
+      this.warn(message, context, 'download'),
     error: (message: string, errorOrContext?: Error | Record<string, any>) =>
       this.error(message, errorOrContext, 'download')
   };
@@ -291,6 +293,8 @@ class LoggerService {
       this.info(message, context, 'collection'),
     success: (message: string, context?: Record<string, any>) =>
       this.success(message, context, 'collection'),
+    warn: (message: string, context?: Record<string, any>) =>
+      this.warn(message, context, 'collection'),
     error: (message: string, errorOrContext?: Error | Record<string, any>) =>
       this.error(message, errorOrContext, 'collection')
   };
@@ -303,6 +307,8 @@ class LoggerService {
       this.info(message, context, 'api'),
     response: (message: string, context?: Record<string, any>) =>
       this.info(message, context, 'api'),
+    warn: (message: string, context?: Record<string, any>) =>
+      this.warn(message, context, 'api'),
     error: (message: string, errorOrContext?: Error | Record<string, any>) =>
       this.error(message, errorOrContext, 'api')
   };
@@ -313,6 +319,8 @@ class LoggerService {
   public user = {
     action: (message: string, context?: Record<string, any>) =>
       this.info(message, context, 'user'),
+    warn: (message: string, context?: Record<string, any>) =>
+      this.warn(message, context, 'user'),
     error: (message: string, errorOrContext?: Error | Record<string, any>) =>
       this.error(message, errorOrContext, 'user')
   };

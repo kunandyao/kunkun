@@ -11,6 +11,9 @@ export enum TaskType {
   FOLLOWING = 'following',   // 用户关注
   FOLLOWER = 'follower',     // 用户粉丝
   DOWNLOAD_MANAGER = 'download_manager', // 下载管理
+  HOT_SEARCH = 'hot_search', // 热搜功能
+  HOT_COMMENT = 'hot_comment', // 热榜评论分析
+  HOT_COMMENT_DASHBOARD = 'hot_comment_dashboard', // 热榜评论大屏
 }
 
 export interface DouyinWork {
@@ -72,4 +75,42 @@ export interface GlobalDownloadStat {
   numActive: string;
   numWaiting: string;
   numStopped: string;
+}
+
+// ============================================================================
+// 用户认证相关类型
+// ============================================================================
+
+export interface User {
+  id: number;
+  username: string;
+  email?: string;
+  phone?: string;
+  avatar?: string;
+  role: 'user' | 'admin';
+  status: 'active' | 'inactive' | 'banned';
+  last_login?: string;
+  created_at: string;
+}
+
+export interface LoginRequest {
+  username: string;
+  password: string;
+}
+
+export interface RegisterRequest {
+  username: string;
+  password: string;
+  email: string;
+}
+
+export interface ChangePasswordRequest {
+  old_password: string;
+  new_password: string;
+}
+
+export interface AuthResponse {
+  access_token: string;
+  token_type: string;
+  user: User;
 }
