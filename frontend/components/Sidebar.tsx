@@ -56,8 +56,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     <div className="w-64 bg-slate-900 text-white flex flex-col h-full shadow-2xl relative z-50">
       {/* Brand */}
       <div className="p-6 pb-2 flex items-center gap-3 select-none">
-        <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/20">
-          <span className="font-bold text-white text-xl">D</span>
+        <div className="w-9 h-9 bg-black rounded-xl flex items-center justify-center shadow-lg overflow-hidden">
+          <img src="/douyin-logo.svg" alt="Douyin" className="w-7 h-7" />
         </div>
         <div>
           <h1 className="text-lg font-bold tracking-wide">Douyin</h1>

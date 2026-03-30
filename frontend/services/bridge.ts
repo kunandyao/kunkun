@@ -51,6 +51,7 @@ export interface Bridge {
   checkFileExists: (filePath: string) => Promise<boolean>;
   openFolder: (folderPath: string) => Promise<boolean>;
   cookieLogin: () => Promise<{ success: boolean; cookie: string; user_agent: string; error: string }>;
+  getReceivedCookie: () => Promise<{ success: boolean; cookie: string; user_agent: string; error: string }>;
   findLocalFile: (workId: string) => Promise<{ found: boolean; video_path: string | null; images: string[] | null }>;
   getMediaUrl: (filePath: string) => string;
   /** 爬取作品评论（多页）并导出 CSV */
@@ -219,6 +220,16 @@ export const bridge: Bridge = {
       return result;
     } catch (error) {
       handleError(error, {}, { customMessage: 'cookie login failed' });
+      throw error;
+    }
+  },
+
+  getReceivedCookie: async () => {
+    try {
+      const result = await api.system.getReceivedCookie();
+      return result;
+    } catch (error) {
+      handleError(error, {}, { customMessage: 'get received cookie failed' });
       throw error;
     }
   },

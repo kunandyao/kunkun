@@ -456,6 +456,12 @@ export const api = {
       post<{ success: boolean; cookie: string; user_agent: string; error: string }>(
         '/api/system/cookie-login'
       ),
+
+    /** 获取浏览器扩展发送的 Cookie */
+    getReceivedCookie: () =>
+      get<{ success: boolean; cookie: string; user_agent: string; error: string }>(
+        '/api/system/received-cookie'
+      ),
   },
 };
 

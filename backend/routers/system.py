@@ -7,7 +7,7 @@
 import os
 import subprocess
 import webbrowser
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, HTTPException
 from loguru import logger
@@ -16,6 +16,8 @@ from pydantic import BaseModel
 from ..lib.cookie_login import get_cookie_by_login
 
 router = APIRouter(prefix="/api/system", tags=["系统工具"])
+
+_received_cookie: Optional[Dict[str, str]] = None
 
 
 # ============================================================================
@@ -49,6 +51,21 @@ class CookieLoginResponse(BaseModel):
     cookie: str = ""
     user_agent: str = ""
     error: str = ""
+
+
+class ReceiveCookieRequest(BaseModel):
+    """接收 Cookie 请求"""
+
+    cookie: str
+    user_agent: str = ""
+    source: str = ""
+
+
+class ReceiveCookieResponse(BaseModel):
+    """接收 Cookie 响应"""
+
+    success: bool
+    message: str = ""
 
 
 # ============================================================================
@@ -141,3 +158,50 @@ def cookie_login() -> Dict[str, Any]:
             "user_agent": "",
             "error": str(e),
         }
+
+
+@router.post("/receive-cookie", response_model=ReceiveCookieResponse)
+def receive_cookie(request: ReceiveCookieRequest) -> Dict[str, Any]:
+    """
+    接收来自浏览器扩展的 Cookie
+
+    由浏览器扩展调用，将 Cookie 发送到应用。
+    """
+    global _received_cookie
+    
+    logger.info(f"[START] 接收到 Cookie，来源: {request.source}")
+    
+    if not request.cookie:
+        return {"success": False, "message": "Cookie 为空"}
+    
+    _received_cookie = {
+        "cookie": request.cookie,
+        "user_agent": request.user_agent,
+        "source": request.source,
+    }
+    
+    logger.success(f"[OK] Cookie 已保存，长度: {len(request.cookie)}")
+    
+    return {"success": True, "message": "Cookie 已接收"}
+
+
+@router.get("/received-cookie", response_model=CookieLoginResponse)
+def get_received_cookie() -> Dict[str, Any]:
+    """
+    获取已接收的 Cookie
+
+    前端轮询此接口获取浏览器扩展发送的 Cookie。
+    """
+    global _received_cookie
+    
+    if _received_cookie:
+        result = {
+            "success": True,
+            "cookie": _received_cookie["cookie"],
+            "user_agent": _received_cookie.get("user_agent", ""),
+            "error": "",
+        }
+        _received_cookie = None
+        return result
+    
+    return {"success": False, "cookie": "", "user_agent": "", "error": "暂无接收到的 Cookie"}

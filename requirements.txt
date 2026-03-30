@@ -23,6 +23,10 @@ python-multipart>=0.0.6
 # 浏览器自动化爬取（备用方案）
 DrissionPage>=4.0.0; python_version >= "3.8"
 
+# Selenium 自动化获取 Cookie
+selenium>=4.15.0
+webdriver-manager>=4.0.0
+
 # 数据分析可视化
 jieba>=0.42.1
 wordcloud>=1.9.0
