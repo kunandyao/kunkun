@@ -183,9 +183,21 @@ class CommentAnalyzer:
         }
 
     def _get_top_comments(self, n: int = 10) -> List[Dict]:
-        """获取热门评论（按点赞数）"""
+        """获取热门评论（按点赞数，去重）"""
+        # 先去重：基于评论内容+用户昵称
+        seen = set()
+        unique_comments = []
+        for comment in self.comments:
+            text = comment.get("text", "")
+            nickname = comment.get("nickname", "")
+            key = f"{nickname}:{text}"
+            if key not in seen and text.strip():  # 只添加非空评论
+                seen.add(key)
+                unique_comments.append(comment)
+        
+        # 按点赞数排序
         sorted_comments = sorted(
-            self.comments,
+            unique_comments,
             key=lambda x: int(x.get("digg_count", 0) or 0),
             reverse=True
         )

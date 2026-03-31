@@ -321,7 +321,9 @@ class HotCommentAnalysisModel:
         CREATE TABLE IF NOT EXISTS hot_comment_analysis (
             id INT AUTO_INCREMENT PRIMARY KEY COMMENT '主键 ID',
             aweme_id VARCHAR(50) NOT NULL COMMENT '视频 ID',
+            hot_id VARCHAR(50) COMMENT '热榜话题 ID',
             title VARCHAR(500) COMMENT '热搜标题',
+            cover_url VARCHAR(500) COMMENT '封面 URL',
             filename VARCHAR(500) NOT NULL COMMENT '文件名',
             filepath VARCHAR(1000) NOT NULL COMMENT '文件路径',
             total_comments INT NOT NULL COMMENT '评论总数',
@@ -338,6 +340,7 @@ class HotCommentAnalysisModel:
             top_comments JSON COMMENT '热门评论',
             created_time DATETIME NOT NULL COMMENT '分析时间',
             UNIQUE KEY uk_aweme_id (aweme_id),
+            INDEX idx_hot_id (hot_id),
             INDEX idx_created_time (created_time)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='热榜评论分析结果表';
         """
@@ -348,14 +351,16 @@ class HotCommentAnalysisModel:
         import json
         sql = """
         INSERT INTO hot_comment_analysis (
-            aweme_id, title, filename, filepath, total_comments,
+            aweme_id, hot_id, title, cover_url, filename, filepath, total_comments,
             sentiment_positive, sentiment_neutral, sentiment_negative,
             sentiment_positive_rate, sentiment_neutral_rate, sentiment_negative_rate,
             hot_words, location_distribution, time_distribution, 
             user_activity, top_comments, created_time
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON DUPLICATE KEY UPDATE
+            hot_id = VALUES(hot_id),
             title = VALUES(title),
+            cover_url = VALUES(cover_url),
             filename = VALUES(filename),
             filepath = VALUES(filepath),
             total_comments = VALUES(total_comments),
@@ -374,7 +379,9 @@ class HotCommentAnalysisModel:
         """
         params = (
             data.get('aweme_id'),
+            data.get('hot_id'),
             data.get('title'),
+            data.get('cover_url'),
             data.get('filename'),
             data.get('filepath'),
             data.get('total_comments'),

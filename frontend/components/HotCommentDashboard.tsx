@@ -135,8 +135,14 @@ export const HotCommentDashboard: React.FC<HotCommentDashboardProps> = ({ refres
       
       // 首先尝试从数据库获取数据
       let result = await api.hotComment.getAnalysisFromDb();
+      console.log('API返回数据:', result);
       if (result.success && result.data && result.data.video_analyses && result.data.video_analyses.length > 0) {
-        setVideoAnalyses(result.data.video_analyses);
+        console.log('总视频数:', result.data.video_analyses.length);
+        console.log('第一条数据:', result.data.video_analyses[0]);
+        // 只保留有封面的视频
+        const analysesWithCover = result.data.video_analyses.filter((v: any) => v.cover_url);
+        console.log('有封面的视频数:', analysesWithCover.length);
+        setVideoAnalyses(analysesWithCover);
         setSelectedIndex(0);
         return;
       }
@@ -145,8 +151,10 @@ export const HotCommentDashboard: React.FC<HotCommentDashboardProps> = ({ refres
       console.log('数据库中没有分析数据，尝试分析现有文件...');
       result = await api.hotComment.analyze();
       if (result.success && result.data) {
-        setVideoAnalyses(result.data.video_analyses || []);
-        if (result.data.video_analyses && result.data.video_analyses.length > 0) {
+        // 只保留有封面的视频
+        const analysesWithCover = (result.data.video_analyses || []).filter((v: any) => v.cover_url);
+        setVideoAnalyses(analysesWithCover);
+        if (analysesWithCover.length > 0) {
           setSelectedIndex(0);
         }
       }
@@ -317,16 +325,6 @@ export const HotCommentDashboard: React.FC<HotCommentDashboardProps> = ({ refres
         { offset: 1, color: '#2d1b5a' }
       ]
     },
-    // 标题
-    title: {
-      text: '热榜热度趋势 TOP 10',
-      left: 20,
-      textStyle: {
-        color: '#ffffff',
-        fontSize: 24,
-        fontWeight: 'bold'
-      }
-    },
     // 图例
     legend: {
       right: 20,
@@ -335,7 +333,7 @@ export const HotCommentDashboard: React.FC<HotCommentDashboardProps> = ({ refres
       textStyle: { color: '#ffffff' }
     },
     // 网格
-    grid: { left: '10%', right: '20%', bottom: '10%', top: '15%', containLabel: true },
+    grid: { left: '10%', right: '20%', bottom: '10%', top: '10%', containLabel: true },
     // 工具提示
     tooltip: {
       trigger: 'axis',
@@ -467,85 +465,91 @@ export const HotCommentDashboard: React.FC<HotCommentDashboardProps> = ({ refres
         </div>
       </div>
 
-      {/* Top Video List */}
-      <div className="bg-slate-800/50 border-b border-slate-700/50 px-6 py-4 shrink-0">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-lg font-bold text-white flex items-center gap-2">
-            <span className="w-1 h-5 bg-gradient-to-b from-blue-500 to-purple-500 rounded"></span>
-            热榜视频列表
-          </h2>
-        </div>
-        <div
-          ref={scrollContainerRef}
-          className="flex gap-3 overflow-x-auto pb-3"
-          style={{ scrollbarWidth: 'thin', scrollbarColor: '#475569 #1e293b' }}
-        >
-          {videoAnalyses.map((videoAnalysis, index) => {
-            const videoSentiment = getSentimentFromAnalysis(videoAnalysis.analysis);
-            return (
-              <div
-                key={videoAnalysis.aweme_id}
-                onClick={() => setSelectedIndex(index)}
-                className={`flex-shrink-0 w-48 cursor-pointer transition-all duration-300 ${
-                  selectedIndex === index
-                    ? 'scale-105 ring-2 ring-blue-500/50'
-                    : 'hover:scale-102 opacity-70 hover:opacity-100'
-                }`}
-              >
-                <div className="bg-slate-800/80 backdrop-blur-lg rounded-xl overflow-hidden border border-slate-700/50 shadow-xl">
-                  <div className="relative">
-                    <div
-                      className={`absolute top-2 left-2 w-8 h-8 rounded-full bg-gradient-to-br ${getSentimentColor(
-                        videoSentiment
-                      )} flex items-center justify-center font-bold text-sm shadow-lg z-10`}
-                    >
-                      {index + 1}
-                    </div>
-                    {videoAnalysis.cover_url ? (
-                      <img
-                        src={`http://127.0.0.1:8000/api/hot-comment/proxy-cover?url=${encodeURIComponent(videoAnalysis.cover_url)}`}
-                        alt="封面"
-                        className="w-full h-24 object-cover"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).style.display = 'none';
-                          (e.target as HTMLImageElement).nextElementSibling?.classList.remove('hidden');
-                        }}
-                      />
-                    ) : null}
-                    <div className={`w-full h-24 bg-gradient-to-br from-slate-700 to-slate-600 flex items-center justify-center ${videoAnalysis.cover_url ? 'hidden' : ''}`}>
-                      <span className="text-3xl">🎬</span>
-                    </div>
-                    {selectedIndex === index && (
-                      <div className="absolute inset-0 bg-blue-500/20 flex items-center justify-center">
-                        <div className="w-10 h-10 rounded-full bg-white/20 backdrop-blur flex items-center justify-center">
-                          <div className="w-3 h-3 bg-white rounded-full"></div>
-                        </div>
+      {/* Scrollable Content */}
+      <div className="flex-1 overflow-y-auto">
+        {/* Top Video List */}
+        <div className="bg-slate-800/50 border-b border-slate-700/50 px-6 py-4">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-bold text-white flex items-center gap-2">
+              <span className="w-1 h-5 bg-gradient-to-b from-blue-500 to-purple-500 rounded"></span>
+              热榜视频列表
+            </h2>
+          </div>
+          <div
+            ref={scrollContainerRef}
+            className="flex gap-3 overflow-x-auto pb-3"
+            style={{ scrollbarWidth: 'thin', scrollbarColor: '#475569 #1e293b' }}
+          >
+            {videoAnalyses.map((videoAnalysis, index) => {
+              const videoSentiment = getSentimentFromAnalysis(videoAnalysis.analysis);
+              return (
+                <div
+                  key={videoAnalysis.aweme_id}
+                  onClick={() => setSelectedIndex(index)}
+                  className={`flex-shrink-0 w-32 cursor-pointer transition-all duration-200 ${
+                    selectedIndex === index
+                      ? 'scale-105 ring-2 ring-blue-500/50'
+                      : 'hover:scale-103 opacity-80 hover:opacity-100'
+                  }`}
+                >
+                  <div className="bg-slate-800/80 backdrop-blur-sm rounded-xl overflow-hidden border border-slate-700/50 shadow-lg hover:shadow-xl hover:border-slate-600/50 transition-all">
+                    {/* 封面区域 - 统一高度 */}
+                    <div className="relative h-36 bg-slate-900">
+                      <div
+                        className={`absolute top-2 left-2 w-6 h-6 rounded-full bg-gradient-to-br ${getSentimentColor(
+                          videoSentiment
+                        )} flex items-center justify-center font-bold text-xs shadow-md z-10`}
+                      >
+                        {index + 1}
                       </div>
-                    )}
-                  </div>
-                  <div className="p-3">
-                    <p className="text-xs text-white line-clamp-2 mb-1">{videoAnalysis.title || videoAnalysis.file}</p>
-                    <p className="text-xs text-slate-400 mb-2">
-                      {videoAnalysis.total_comments} 条评论
-                    </p>
-                    <span
-                      className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium border ${getSentimentBadgeColor(
-                        videoSentiment
-                      )}`}
-                    >
-                      {getSentimentLabel(videoSentiment)}
-                    </span>
+                      {videoAnalysis.cover_url ? (
+                        <img
+                          src={`http://127.0.0.1:8000/api/hot-comment/proxy-cover?url=${encodeURIComponent(videoAnalysis.cover_url)}`}
+                          alt="封面"
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).style.display = 'none';
+                          }}
+                        />
+                      ) : null}
+                      {/* 默认图标或错误占位 */}
+                      <div className={`absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-slate-700 to-slate-800 ${videoAnalysis.cover_url ? 'hidden' : ''}`}>
+                        <span className="text-2xl mb-1">🎬</span>
+                        <span className="text-[10px] text-slate-400">无封面</span>
+                      </div>
+                      {/* 选中状态 */}
+                      {selectedIndex === index && (
+                        <div className="absolute inset-0 bg-blue-500/15 flex items-center justify-center">
+                          <div className="w-8 h-8 rounded-full bg-blue-500/80 flex items-center justify-center">
+                            <div className="w-2.5 h-2.5 bg-white rounded-full"></div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    {/* 信息区域 */}
+                    <div className="p-2 bg-slate-800/50">
+                      <p className="text-xs text-white line-clamp-2 leading-tight min-h-[2.5rem]">{videoAnalysis.title || videoAnalysis.file}</p>
+                      <div className="flex items-center justify-between mt-1.5">
+                        <span className="text-[10px] text-slate-400">{videoAnalysis.total_comments} 评论</span>
+                        <span
+                          className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${getSentimentBadgeColor(
+                            videoSentiment
+                          )}`}
+                        >
+                          {getSentimentLabel(videoSentiment)}
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
-      </div>
 
-      {/* Analysis Dashboard */}
-      <div className="flex-1 overflow-y-auto px-6 py-4">
-        <div className="max-w-7xl mx-auto">
+        {/* Analysis Dashboard */}
+        <div className="px-6 py-4">
+          <div className="max-w-7xl mx-auto">
           {/* Hot Trend Chart */}
           {hotHistoryData && hotHistoryData.times.length > 1 && (
             <div className="mb-6">
@@ -704,6 +708,7 @@ export const HotCommentDashboard: React.FC<HotCommentDashboardProps> = ({ refres
               </div>
             </div>
           )}
+          </div>
         </div>
       </div>
     </div>

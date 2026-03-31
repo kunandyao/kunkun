@@ -372,25 +372,43 @@ def analyze_hot_comments(request: AnalyzeHotCommentsRequest) -> Dict[str, Any]:
         try:
             from datetime import datetime
             for analysis in video_analyses:
-                # 从热榜表获取标题和封面图
+                # 从热榜表获取 hot_id、标题和封面图（通过标题关联）
+                hot_id = None
                 title = None
                 cover_url = None
-                try:
-                    sql_info = "SELECT title, cover_url FROM hot_search WHERE video_id = %s ORDER BY crawl_time DESC LIMIT 1"
-                    info_result = db_manager.fetch_one(sql_info, (analysis['aweme_id'],))
-                    if info_result:
-                        title = info_result.get('title')
-                        cover_url = info_result.get('cover_url')
-                except Exception as e_info:
-                    logger.warning(f"获取热榜信息失败 {analysis['aweme_id']}: {e_info}")
+                
+                # 先尝试从文件名提取标题
+                filename = analysis.get('file', '')
+                extracted_title = None
+                if filename.startswith('comments_'):
+                    import re
+                    name = filename[9:-4]  # 去掉 "comments_" 和 ".csv"
+                    match = re.match(r'(.+)_(\d{8})_(\d{6})$', name)
+                    if match:
+                        extracted_title = match.group(1)
+                
+                # 通过标题在 hot_search 表中查找
+                if extracted_title:
+                    try:
+                        sql_info = "SELECT video_id, title, cover_url FROM hot_search WHERE title LIKE %s ORDER BY crawl_time DESC LIMIT 1"
+                        info_result = db_manager.fetch_one(sql_info, (f'%{extracted_title}%',))
+                        if info_result:
+                            hot_id = info_result.get('video_id')
+                            title = info_result.get('title')
+                            cover_url = info_result.get('cover_url')
+                            logger.info(f"通过标题 '{extracted_title}' 关联到 hot_id: {hot_id}")
+                    except Exception as e_info:
+                        logger.warning(f"获取热榜信息失败 '{extracted_title}': {e_info}")
                 
                 # 更新 video_analyses 中的标题和封面图
-                analysis['title'] = title
+                analysis['title'] = title or extracted_title
                 analysis['cover_url'] = cover_url
+                analysis['hot_id'] = hot_id
                 
                 analysis_data = {
                     'aweme_id': analysis['aweme_id'],
-                    'title': title,
+                    'hot_id': hot_id,
+                    'title': title or extracted_title,
                     'cover_url': cover_url,
                     'filename': analysis['file'],
                     'filepath': analysis['filepath'],
@@ -483,7 +501,7 @@ def proxy_cover_image(url: str):
         response = requests.get(url, headers=headers, timeout=10, stream=True)
         
         if response.status_code != 200:
-            logger.warning(f"获取封面图失败：{url}, status: {response.status_code}")
+            logger.debug(f"获取封面图失败：{url}, status: {response.status_code}")
             raise HTTPException(status_code=404, detail="图片加载失败")
         
         # 获取图片类型
@@ -978,7 +996,7 @@ def get_analysis_list() -> Dict[str, Any]:
         import json
         
         sql = """
-        SELECT id, aweme_id, title, filename, filepath, total_comments,
+        SELECT id, aweme_id, hot_id, title, cover_url, filename, filepath, total_comments,
                sentiment_positive, sentiment_neutral, sentiment_negative,
                sentiment_positive_rate, sentiment_neutral_rate, sentiment_negative_rate,
                hot_words, location_distribution, time_distribution, 
@@ -998,6 +1016,8 @@ def get_analysis_list() -> Dict[str, Any]:
                 "filepath": row['filepath'],
                 "title": row.get('title'),
                 "aweme_id": row['aweme_id'],
+                "hot_id": row.get('hot_id'),
+                "cover_url": row.get('cover_url'),
                 "analysis": {
                     "total": row['total_comments'],
                     "hot_words": json.loads(row['hot_words']) if row['hot_words'] else [],
