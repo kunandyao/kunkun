@@ -371,6 +371,8 @@ def analyze_hot_comments(request: AnalyzeHotCommentsRequest) -> Dict[str, Any]:
         # 将分析结果写入数据库
         try:
             from datetime import datetime
+            from backend.lib.cover_utils import download_cover
+            
             for analysis in video_analyses:
                 # 从热榜表获取 hot_id、标题和封面图（通过标题关联）
                 hot_id = None
@@ -387,16 +389,30 @@ def analyze_hot_comments(request: AnalyzeHotCommentsRequest) -> Dict[str, Any]:
                     if match:
                         extracted_title = match.group(1)
                 
-                # 通过标题在 hot_search 表中查找
+                # 通过标题在 hot_search 表中查找 - 尝试多种匹配方式
                 if extracted_title:
                     try:
-                        sql_info = "SELECT video_id, title, cover_url FROM hot_search WHERE title LIKE %s ORDER BY crawl_time DESC LIMIT 1"
-                        info_result = db_manager.fetch_one(sql_info, (f'%{extracted_title}%',))
+                        # 方式1: 精确匹配
+                        sql_info = "SELECT video_id, title, cover_url FROM hot_search WHERE title = %s ORDER BY crawl_time DESC LIMIT 1"
+                        info_result = db_manager.fetch_one(sql_info, (extracted_title,))
+                        
+                        # 方式2: LIKE 匹配
+                        if not info_result:
+                            sql_info = "SELECT video_id, title, cover_url FROM hot_search WHERE title LIKE %s ORDER BY crawl_time DESC LIMIT 1"
+                            info_result = db_manager.fetch_one(sql_info, (f'%{extracted_title}%',))
+                        
                         if info_result:
                             hot_id = info_result.get('video_id')
                             title = info_result.get('title')
                             cover_url = info_result.get('cover_url')
-                            logger.info(f"通过标题 '{extracted_title}' 关联到 hot_id: {hot_id}")
+                            logger.info(f"通过标题 '{extracted_title}' 关联到 hot_id: {hot_id}, cover_url: {cover_url[:60] if cover_url else 'None'}")
+                            
+                            # 如果 cover_url 不是本地路径，尝试下载
+                            if cover_url and not cover_url.startswith('/static/covers/') and hot_id:
+                                local_cover = download_cover(cover_url, filename=hot_id)
+                                if local_cover:
+                                    cover_url = local_cover
+                                    logger.info(f"已下载封面到本地: {local_cover}")
                     except Exception as e_info:
                         logger.warning(f"获取热榜信息失败 '{extracted_title}': {e_info}")
                 

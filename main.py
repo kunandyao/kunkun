@@ -179,6 +179,12 @@ async def events_stream():
 # 静态文件挂载
 # ============================================================================
 
+# 挂载 static 目录（用于封面图片等静态资源）
+_static_dir = os.path.join(RESOURCE_ROOT, "static")
+if os.path.exists(_static_dir):
+    app.mount("/static", StaticFiles(directory=_static_dir), name="static")
+    logger.info(f"✓ 静态资源目录已挂载: {_static_dir}")
+
 _frontend_dist_dir = os.path.join(RESOURCE_ROOT, "frontend", "dist")
 
 if os.path.exists(_frontend_dist_dir):

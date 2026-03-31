@@ -139,10 +139,9 @@ export const HotCommentDashboard: React.FC<HotCommentDashboardProps> = ({ refres
       if (result.success && result.data && result.data.video_analyses && result.data.video_analyses.length > 0) {
         console.log('总视频数:', result.data.video_analyses.length);
         console.log('第一条数据:', result.data.video_analyses[0]);
-        // 只保留有封面的视频
-        const analysesWithCover = result.data.video_analyses.filter((v: any) => v.cover_url);
-        console.log('有封面的视频数:', analysesWithCover.length);
-        setVideoAnalyses(analysesWithCover);
+        // 显示所有视频，不只是有封面的
+        console.log('有封面的视频数:', result.data.video_analyses.filter((v: any) => v.cover_url).length);
+        setVideoAnalyses(result.data.video_analyses);
         setSelectedIndex(0);
         return;
       }
@@ -151,10 +150,9 @@ export const HotCommentDashboard: React.FC<HotCommentDashboardProps> = ({ refres
       console.log('数据库中没有分析数据，尝试分析现有文件...');
       result = await api.hotComment.analyze();
       if (result.success && result.data) {
-        // 只保留有封面的视频
-        const analysesWithCover = (result.data.video_analyses || []).filter((v: any) => v.cover_url);
-        setVideoAnalyses(analysesWithCover);
-        if (analysesWithCover.length > 0) {
+        // 显示所有视频，不只是有封面的
+        setVideoAnalyses(result.data.video_analyses || []);
+        if ((result.data.video_analyses || []).length > 0) {
           setSelectedIndex(0);
         }
       }
@@ -502,9 +500,9 @@ export const HotCommentDashboard: React.FC<HotCommentDashboardProps> = ({ refres
                       >
                         {index + 1}
                       </div>
-                      {videoAnalysis.cover_url ? (
+                      {videoAnalysis.cover_url && videoAnalysis.cover_url.startsWith('/static/') ? (
                         <img
-                          src={`http://127.0.0.1:8000/api/hot-comment/proxy-cover?url=${encodeURIComponent(videoAnalysis.cover_url)}`}
+                          src={`http://127.0.0.1:8000${videoAnalysis.cover_url}`}
                           alt="封面"
                           className="w-full h-full object-cover"
                           onError={(e) => {
@@ -513,7 +511,7 @@ export const HotCommentDashboard: React.FC<HotCommentDashboardProps> = ({ refres
                         />
                       ) : null}
                       {/* 默认图标或错误占位 */}
-                      <div className={`absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-slate-700 to-slate-800 ${videoAnalysis.cover_url ? 'hidden' : ''}`}>
+                      <div className={`absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-br from-slate-700 to-slate-800 ${videoAnalysis.cover_url && videoAnalysis.cover_url.startsWith('/static/') ? 'hidden' : ''}`}>
                         <span className="text-2xl mb-1">🎬</span>
                         <span className="text-[10px] text-slate-400">无封面</span>
                       </div>

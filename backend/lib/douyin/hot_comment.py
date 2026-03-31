@@ -882,6 +882,7 @@ class DouyinHotCommentFetcher:
         try:
             from backend.lib.database import db_manager
             from backend.lib.database.models import HotSearchModel
+            from backend.lib.cover_utils import download_cover
             
             crawl_time = datetime.datetime.now()
             saved_count = 0
@@ -893,12 +894,20 @@ class DouyinHotCommentFetcher:
                 hot_value_raw = video.get("hot_value", "")
                 hot_value = str(hot_value_raw).strip() if hot_value_raw else None
                 
+                # 下载封面到本地
+                cover_url = video.get("cover", "")
+                local_cover_path = None
+                if cover_url:
+                    # 使用 hot_id 作为文件名
+                    hot_id = video.get("hot_id", "")
+                    local_cover_path = download_cover(cover_url, filename=hot_id if hot_id else None)
+                
                 data = {
                     "rank": video.get("rank", 0),
                     "title": video.get("title", ""),
                     "hot_value": hot_value,
                     "video_id": video.get("hot_id"),  # 使用话题 ID 作为 video_id
-                    "cover_url": video.get("cover", ""),  # 封面图 URL
+                    "cover_url": local_cover_path or cover_url,  # 优先使用本地路径
                     "crawl_time": crawl_time,
                 }
                 
