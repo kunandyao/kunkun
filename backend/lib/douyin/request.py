@@ -174,6 +174,27 @@ class Request(object):
                 ms_token += base_str[random.randint(0, length)]
         return ms_token
 
+    def getRedirectUrl(self, url: str) -> str:
+        """
+        获取URL的最终重定向地址
+
+        Args:
+            url: 原始URL
+
+        Returns:
+            最终重定向的URL
+        """
+        headers = self.HEADERS.copy()
+        response = requests.head(
+            url, 
+            headers=headers, 
+            cookies=self.COOKIES, 
+            proxies=self.proxies, 
+            timeout=15,
+            allow_redirects=True
+        )
+        return response.url
+
     def getHTML(self, url) -> str:
         """
         获取网页HTML内容

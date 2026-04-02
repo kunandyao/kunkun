@@ -132,7 +132,7 @@ class CommentAnalyzer:
     # -------------------------------------------------------------------------
     def _load_bert_model(self):
         CommentAnalyzer._model_load_failed = True
-        logger.info("✓ 使用关键词匹配情感分析（禁用BERT模型）")
+        logger.info("✓ 使用情感字典匹配模型")
 
     def _analyze_sentiment_bert(self) -> Dict[str, Any]:
         """
@@ -283,7 +283,7 @@ class CommentAnalyzer:
                 "positive_rate": round(pos / total * 100, 2) if total else 0,
                 "negative_rate": round(neg / total * 100, 2) if total else 0,
                 "neutral_rate": round(neu / total * 100, 2) if total else 0,
-                "model": "细粒度情感词典模型（中英文专业版）"
+                "model": "情感字典匹配"
             }
 
         except Exception as e:
@@ -307,7 +307,7 @@ class CommentAnalyzer:
             "positive_rate": round(pos/total*100,2) if total else 0,
             "negative_rate": round(neg/total*100,2) if total else 0,
             "neutral_rate": round(neu/total*100,2) if total else 0,
-            "model": "关键词匹配(降级)"
+            "model": "情感字典匹配"
         }
 
     # -------------------------------------------------------------------------

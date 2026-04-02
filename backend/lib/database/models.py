@@ -57,12 +57,14 @@ class HotSearchModel:
             `rank` INT NOT NULL COMMENT '排名',
             title VARCHAR(500) NOT NULL COMMENT '标题',
             hot_value VARCHAR(50) COMMENT '热度值',
-            video_id VARCHAR(50) COMMENT '视频 ID',
+            video_id VARCHAR(50) COMMENT '热榜话题 ID',
+            aweme_id VARCHAR(50) COMMENT '真正的视频 ID',
             cover_url VARCHAR(500) COMMENT '封面 URL',
             crawl_time DATETIME NOT NULL COMMENT '爬取时间',
             INDEX idx_rank (`rank`),
             INDEX idx_crawl_time (crawl_time),
-            INDEX idx_video_id (video_id)
+            INDEX idx_video_id (video_id),
+            INDEX idx_aweme_id (aweme_id)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='热榜数据表';
         """
     
@@ -75,19 +77,21 @@ class HotSearchModel:
         - ranks[0] → rank (排名)
         - title (字典的 key) → title
         - hotValue → hot_value
-        - 从 URL 提取 video_id → video_id
+        - video_id → 热榜话题 ID
+        - aweme_id → 真正的视频 ID
         - cover → cover_url
         """
         sql = """
-        INSERT INTO hot_search (`rank`, title, hot_value, video_id, cover_url, crawl_time)
-        VALUES (%s, %s, %s, %s, %s, %s)
+        INSERT INTO hot_search (`rank`, title, hot_value, video_id, aweme_id, cover_url, crawl_time)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
         """
         params = (
             data.get('rank'),
             data.get('title'),
             data.get('hot_value'),
             data.get('video_id'),
-            data.get('cover_url'),  # 新增 cover_url 字段
+            data.get('aweme_id'),
+            data.get('cover_url'),
             data.get('crawl_time', datetime.now())
         )
         return sql, params

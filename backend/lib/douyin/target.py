@@ -12,7 +12,7 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 import ujson as json
 from loguru import logger
 
-from ...utils.text import quit, sanitize_filename, url_redirect
+from ...utils.text import quit, sanitize_filename
 from .request import Request
 from .types import USER_ID_PREFIX, DouyinURL
 
@@ -92,10 +92,12 @@ class TargetHandler:
     def _parse_url(self, target: str, hostname: str):
         """解析URL类型的目标"""
         if hostname == "v.douyin.com":
-            target = url_redirect(target)
+            target = self.request.getRedirectUrl(target)
+            logger.debug(f"短链接重定向后: {target}")
 
         path = unquote(urlparse(target).path.strip("/"))
         path_parts = path.split("/")
+        logger.debug(f"URL路径部分: {path_parts}")
 
         # 确保路径至少有两个部分
         if len(path_parts) < 2:
@@ -107,10 +109,13 @@ class TargetHandler:
             self.id = path_parts[-1]
             self.url = target
 
-            # 自动识别：单个作品、搜索、音乐、合集、话题
+            # 自动识别：单个作品、搜索、音乐、合集、话题、用户主页
             if _type in ["video", "note"]:
                 self.type = "aweme"
                 self.url = f"{DouyinURL.AWEME}/{self.id}"
+            elif _type == "user":
+                self.type = "post"
+                logger.debug(f"识别为用户主页，sec_user_id: {self.id}")
             elif _type in ["music", "hashtag"]:
                 self.type = _type
             elif _type == "collection":

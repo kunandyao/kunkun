@@ -119,6 +119,12 @@ export const HotCommentDashboard: React.FC<HotCommentDashboardProps> = ({ refres
   const [error, setError] = useState<string | null>(null);
   const [hotHistoryData, setHotHistoryData] = useState<{ times: string[]; series: any[] } | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  
+  // 图表refs，用于PDF导出
+  const sentimentChartRef = useRef<ReactECharts>(null);
+  const hotWordsChartRef = useRef<ReactECharts>(null);
+  const locationChartRef = useRef<ReactECharts>(null);
+  const timeChartRef = useRef<ReactECharts>(null);
 
   useEffect(() => {
     console.log('useEffect 运行，refreshTrigger:', refreshTrigger);
@@ -186,9 +192,33 @@ export const HotCommentDashboard: React.FC<HotCommentDashboardProps> = ({ refres
   const selectedAnalysis = videoAnalyses[selectedIndex];
   const sentiment = selectedAnalysis ? getSentimentFromAnalysis(selectedAnalysis.analysis) : 'neutral';
 
-  const generatePDFReport = () => {
+  const generatePDFReport = async () => {
     if (!selectedAnalysis) return;
     
+    // 获取图表图片
+    const getChartImage = (chartRef: React.RefObject<ReactECharts>): string => {
+      if (chartRef.current) {
+        const echartsInstance = chartRef.current.getEchartsInstance();
+        if (echartsInstance) {
+          return echartsInstance.getDataURL({
+            type: 'png',
+            pixelRatio: 2,
+            backgroundColor: '#fff'
+          });
+        }
+      }
+      return '';
+    };
+
+    // 等待一下确保图表渲染完成
+    await new Promise(resolve => setTimeout(resolve, 500));
+
+    // 获取各图表图片
+    const sentimentImage = getChartImage(sentimentChartRef);
+    const hotWordsImage = getChartImage(hotWordsChartRef);
+    const locationImage = getChartImage(locationChartRef);
+    const timeImage = getChartImage(timeChartRef);
+
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
       alert('请允许弹出窗口以生成PDF报告');
@@ -235,6 +265,11 @@ export const HotCommentDashboard: React.FC<HotCommentDashboardProps> = ({ refres
           .subtitle {
             font-size: 14px;
             color: #86909C;
+          }
+          .chart-image {
+            max-width: 100%;
+            height: auto;
+            margin: 20px 0;
           }
           .section {
             margin-bottom: 30px;
@@ -343,6 +378,7 @@ export const HotCommentDashboard: React.FC<HotCommentDashboardProps> = ({ refres
 
           <div class="section">
             <div class="section-title">二、情感分析</div>
+            ${sentimentImage ? `<div style="text-align: center; margin: 20px 0;"><img src="${sentimentImage}" style="max-width: 400px; height: auto;" /></div>` : ''}
             <table class="table">
               <tr>
                 <th>情感类型</th>
@@ -368,7 +404,8 @@ export const HotCommentDashboard: React.FC<HotCommentDashboardProps> = ({ refres
           </div>
 
           <div class="section">
-            <div class="section-title">三、热门关键词 TOP 10</div>
+            <div class="section-title">三、热门关键词分析</div>
+            ${hotWordsImage ? `<div style="text-align: center; margin: 20px 0;"><img src="${hotWordsImage}" style="max-width: 100%; height: auto;" /></div>` : ''}
             <table class="table">
               <tr>
                 <th>排名</th>
@@ -406,7 +443,31 @@ export const HotCommentDashboard: React.FC<HotCommentDashboardProps> = ({ refres
           </div>
 
           <div class="section">
-            <div class="section-title">五、用户活跃度</div>
+            <div class="section-title">五、地域分布</div>
+            ${locationImage ? `<div style="text-align: center; margin: 20px 0;"><img src="${locationImage}" style="max-width: 100%; height: auto;" /></div>` : ''}
+            <table class="table">
+              <tr>
+                <th>排名</th>
+                <th>地区</th>
+                <th>用户数</th>
+              </tr>
+              ${analysis.location_distribution.slice(0, 10).map(([location, count], index) => `
+                <tr>
+                  <td>${index + 1}</td>
+                  <td>${location}</td>
+                  <td>${count}</td>
+                </tr>
+              `).join('')}
+            </table>
+          </div>
+
+          <div class="section">
+            <div class="section-title">六、评论时间分布</div>
+            ${timeImage ? `<div style="text-align: center; margin: 20px 0;"><img src="${timeImage}" style="max-width: 100%; height: auto;" /></div>` : ''}
+          </div>
+
+          <div class="section">
+            <div class="section-title">七、用户活跃度</div>
             <table class="table">
               <tr>
                 <th>指标</th>
@@ -425,7 +486,7 @@ export const HotCommentDashboard: React.FC<HotCommentDashboardProps> = ({ refres
 
           ${analysis.topics && analysis.topics.topics && analysis.topics.topics.length > 0 ? `
           <div class="section">
-            <div class="section-title">六、LDA 主题分析</div>
+            <div class="section-title">八、LDA 主题分析</div>
             <table class="table">
               <tr>
                 <th>主题ID</th>
@@ -443,8 +504,8 @@ export const HotCommentDashboard: React.FC<HotCommentDashboardProps> = ({ refres
           ` : ''}
 
           <div class="section">
-            <div class="section-title">七、分析模型</div>
-            <p><strong>情感分析模型：</strong>${analysis.sentiment.model}</p>
+            <div class="section-title">九、分析模型</div>
+            <p><strong>情感分析模型：</strong>情感字典匹配</p>
             ${analysis.topics && analysis.topics.model ? `<p><strong>主题分析模型：</strong>${analysis.topics.model}</p>` : ''}
           </div>
 
@@ -819,7 +880,13 @@ export const HotCommentDashboard: React.FC<HotCommentDashboardProps> = ({ refres
                 >
                   <div className="bg-slate-800/80 backdrop-blur-sm rounded-xl overflow-hidden border border-slate-700/50 shadow-lg hover:shadow-xl hover:border-slate-600/50 transition-all">
                     {/* 封面区域 - 统一高度 */}
-                    <div className="relative h-36 bg-slate-900">
+                    <div 
+                      className="relative h-36 bg-slate-900"
+                      onDoubleClick={() => {
+                        window.open(`https://www.douyin.com/video/${videoAnalysis.aweme_id}`, '_blank');
+                      }}
+                      title="双击跳转到抖音原视频"
+                    >
                       <div
                         className={`absolute top-2 left-2 w-6 h-6 rounded-full bg-gradient-to-br ${getSentimentColor(
                           videoSentiment
@@ -979,7 +1046,7 @@ export const HotCommentDashboard: React.FC<HotCommentDashboardProps> = ({ refres
                 情感分布
               </h3>
               <div className="h-64">
-                <ReactECharts option={sentimentPieChartOption} style={{ height: '100%' }} />
+                <ReactECharts ref={sentimentChartRef} option={sentimentPieChartOption} style={{ height: '100%' }} />
               </div>
             </div>
 
@@ -989,7 +1056,7 @@ export const HotCommentDashboard: React.FC<HotCommentDashboardProps> = ({ refres
                 热门词汇 TOP 10
               </h3>
               <div className="h-64">
-                <ReactECharts option={hotWordsBarChartOption} style={{ height: '100%' }} />
+                <ReactECharts ref={hotWordsChartRef} option={hotWordsBarChartOption} style={{ height: '100%' }} />
               </div>
             </div>
 
@@ -999,7 +1066,7 @@ export const HotCommentDashboard: React.FC<HotCommentDashboardProps> = ({ refres
                 IP 地区分布 TOP 10
               </h3>
               <div className="h-64">
-                <ReactECharts option={ipBarChartOption} style={{ height: '100%' }} />
+                <ReactECharts ref={locationChartRef} option={ipBarChartOption} style={{ height: '100%' }} />
               </div>
             </div>
 
@@ -1009,7 +1076,7 @@ export const HotCommentDashboard: React.FC<HotCommentDashboardProps> = ({ refres
                 评论时间分布（按小时）
               </h3>
               <div className="h-64">
-                <ReactECharts option={timeLineChartOption} style={{ height: '100%' }} />
+                <ReactECharts ref={timeChartRef} option={timeLineChartOption} style={{ height: '100%' }} />
               </div>
             </div>
           </div>
@@ -1060,7 +1127,7 @@ export const HotCommentDashboard: React.FC<HotCommentDashboardProps> = ({ refres
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="bg-slate-700/30 rounded-lg p-3">
                 <div className="text-sm font-medium text-white mb-1">情感分析模型</div>
-                <div className="text-gray-300 text-sm">{selectedAnalysis.analysis.sentiment.model}</div>
+                <div className="text-gray-300 text-sm">情感字典匹配</div>
               </div>
               {selectedAnalysis.analysis.topics && selectedAnalysis.analysis.topics.model && (
                 <div className="bg-slate-700/30 rounded-lg p-3">

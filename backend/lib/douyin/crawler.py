@@ -125,6 +125,7 @@ class Douyin:
         self.id = handler.id
         self.url = handler.url
         self.type = handler.type
+        logger.debug(f"目标信息更新: type={self.type}, id={self.id}")
 
         # 获取详细信息
         self.title, self.down_path, self.aria2_conf, self.info, self.render_data = (

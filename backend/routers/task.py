@@ -250,9 +250,10 @@ def _execute_task(
         # 获取后端实际识别的类型
         detected_type = douyin.type
 
-        # 保存 aria2_conf 路径
-        state.aria2_config_paths[task_id] = douyin.aria2_conf
-        state.task_status[task_id]["aria2_conf"] = douyin.aria2_conf
+        # 只有当采集结果不为空时才保存 aria2_conf 路径
+        if douyin.results and len(douyin.results) > 0:
+            state.aria2_config_paths[task_id] = douyin.aria2_conf
+            state.task_status[task_id]["aria2_conf"] = douyin.aria2_conf
 
         # 检查是否有未回调的结果
         has_new_results = (

@@ -730,6 +730,18 @@ class DouyinHotCommentFetcher:
                 result["videos"].append(video)
                 result["total_comments"] += len(comments)
 
+                # 更新 hot_search 表中的 aweme_id
+                try:
+                    from backend.lib.database import db_manager
+                    hot_id = video.get("hot_id") or video.get("sentence_id")
+                    if hot_id and aweme_id:
+                        sql_update = "UPDATE hot_search SET aweme_id = %s WHERE video_id = %s AND (aweme_id IS NULL OR aweme_id = '')"
+                        with db_manager.get_cursor() as cursor:
+                            cursor.execute(sql_update, (aweme_id, hot_id))
+                            logger.info(f"已更新 hot_search 表 aweme_id：{hot_id} -> {aweme_id}")
+                except Exception as e_update:
+                    logger.warning(f"更新 hot_search aweme_id 失败：{e_update}")
+
                 # 添加延迟，避免请求过快
                 import time
                 time.sleep(1.5)
@@ -897,16 +909,30 @@ class DouyinHotCommentFetcher:
                 # 下载封面到本地
                 cover_url = video.get("cover", "")
                 local_cover_path = None
+                hot_id = video.get("hot_id", "")
                 if cover_url:
                     # 使用 hot_id 作为文件名
-                    hot_id = video.get("hot_id", "")
                     local_cover_path = download_cover(cover_url, filename=hot_id if hot_id else None)
+                
+                # 检查数据库中是否已有该话题对应的真正视频ID
+                aweme_id_to_use = None
+                try:
+                    sql_check = "SELECT aweme_id FROM hot_search WHERE title = %s AND aweme_id IS NOT NULL ORDER BY crawl_time DESC LIMIT 1"
+                    with db_manager.get_cursor() as cursor:
+                        cursor.execute(sql_check, (video.get("title", ""),))
+                        existing = cursor.fetchone()
+                        if existing and existing['aweme_id']:
+                            aweme_id_to_use = existing['aweme_id']
+                            logger.info(f"复用已有视频ID: {video.get('title')} -> {aweme_id_to_use}")
+                except Exception as e_check:
+                    logger.warning(f"检查已有视频ID失败: {e_check}")
                 
                 data = {
                     "rank": video.get("rank", 0),
                     "title": video.get("title", ""),
                     "hot_value": hot_value,
-                    "video_id": video.get("hot_id"),  # 使用话题 ID 作为 video_id
+                    "video_id": hot_id,  # 热榜话题ID
+                    "aweme_id": aweme_id_to_use,  # 真正的视频ID（可能为空）
                     "cover_url": local_cover_path or cover_url,  # 优先使用本地路径
                     "crawl_time": crawl_time,
                 }

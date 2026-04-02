@@ -402,6 +402,7 @@ def analyze_hot_comments(request: AnalyzeHotCommentsRequest) -> Dict[str, Any]:
                 hot_id = None
                 title = None
                 cover_url = None
+                real_aweme_id = analysis['aweme_id']  # 默认使用原来的
                 
                 # 先尝试从文件名提取标题
                 filename = analysis.get('file', '')
@@ -417,19 +418,20 @@ def analyze_hot_comments(request: AnalyzeHotCommentsRequest) -> Dict[str, Any]:
                 if extracted_title:
                     try:
                         # 方式1: 精确匹配
-                        sql_info = "SELECT video_id, title, cover_url FROM hot_search WHERE title = %s ORDER BY crawl_time DESC LIMIT 1"
+                        sql_info = "SELECT video_id, aweme_id, title, cover_url FROM hot_search WHERE title = %s ORDER BY crawl_time DESC LIMIT 1"
                         info_result = db_manager.fetch_one(sql_info, (extracted_title,))
                         
                         # 方式2: LIKE 匹配
                         if not info_result:
-                            sql_info = "SELECT video_id, title, cover_url FROM hot_search WHERE title LIKE %s ORDER BY crawl_time DESC LIMIT 1"
+                            sql_info = "SELECT video_id, aweme_id, title, cover_url FROM hot_search WHERE title LIKE %s ORDER BY crawl_time DESC LIMIT 1"
                             info_result = db_manager.fetch_one(sql_info, (f'%{extracted_title}%',))
                         
                         if info_result:
-                            hot_id = info_result.get('video_id')
+                            hot_id = info_result.get('video_id')  # 热榜话题ID
+                            real_aweme_id = info_result.get('aweme_id') or hot_id  # 优先使用真正的视频ID
                             title = info_result.get('title')
                             cover_url = info_result.get('cover_url')
-                            logger.info(f"通过标题 '{extracted_title}' 关联到 hot_id: {hot_id}, cover_url: {cover_url[:60] if cover_url else 'None'}")
+                            logger.info(f"通过标题 '{extracted_title}' 关联到 hot_id: {hot_id}, aweme_id: {real_aweme_id}")
                             
                             # 如果 cover_url 不是本地路径，尝试下载
                             if cover_url and not cover_url.startswith('/static/covers/') and hot_id:
@@ -444,9 +446,10 @@ def analyze_hot_comments(request: AnalyzeHotCommentsRequest) -> Dict[str, Any]:
                 analysis['title'] = title or extracted_title
                 analysis['cover_url'] = cover_url
                 analysis['hot_id'] = hot_id
+                analysis['aweme_id'] = real_aweme_id  # 更新为真正的视频ID
                 
                 analysis_data = {
-                    'aweme_id': analysis['aweme_id'],
+                    'aweme_id': real_aweme_id,  # 使用真正的视频ID
                     'hot_id': hot_id,
                     'title': title or extracted_title,
                     'cover_url': cover_url,
