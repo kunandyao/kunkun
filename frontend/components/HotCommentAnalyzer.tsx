@@ -45,10 +45,36 @@ export const HotCommentAnalyzer: React.FC<HotCommentAnalyzerProps> = ({ setActiv
   const [intervalHours, setIntervalHours] = useState(2);
 
   useEffect(() => {
+    // 加载定时任务状态
     loadSchedulerStatus();
     const timer = setInterval(loadSchedulerStatus, 5000);
-    return () => clearInterval(timer);
+    
+    // 加载爬取状态
+    loadCrawlStatus();
+    
+    // 定期检查爬取状态（处理页面跳转回来的情况）
+    const crawlTimer = setInterval(loadCrawlStatus, 3000);
+    
+    return () => {
+      clearInterval(timer);
+      clearInterval(crawlTimer);
+    };
   }, []);
+
+  // 加载爬取状态
+  const loadCrawlStatus = async () => {
+    try {
+      const result = await api.hotComment.getCrawlStatus();
+      if (result.success && result.data) {
+        setCrawling(result.data.crawling);
+        if (result.data.crawl_result) {
+          setCrawlResult(result.data.crawl_result.data);
+        }
+      }
+    } catch (err) {
+      console.error('加载爬取状态失败:', err);
+    }
+  };
 
   // 只在组件首次加载时检查是否需要自动爬取，跳转回来时不自动刷新
   const [hasAutoCrawled, setHasAutoCrawled] = useState(false);

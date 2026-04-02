@@ -29,6 +29,9 @@ backend/test/*
 aria2c
 aria2c.exe
 
+# 本地封面图片（不提交到git）
+static/covers/
+
 # ==========================
 # Python / Pywebview 后端部分
 # ==========================

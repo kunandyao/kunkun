@@ -351,6 +351,19 @@ export const api = {
       get<{ file_path: string; filename: string; created_at: string }>(
         `/api/comment/analysis-report?report_type=${reportType}`
       ),
+    /** 爬取单个作品评论并分析，保存到数据库 */
+    crawlAndAnalyze: (awemeId: string, maxCount = 500, title?: string, coverUrl?: string) =>
+      post<{
+        success: boolean;
+        message: string;
+        aweme_id: string;
+        title?: string;
+        author?: string;
+        cover_url?: string;
+        total_comments: number;
+        csv_file?: string;
+        analysis?: Record<string, unknown>;
+      }>('/api/comment/crawl-and-analyze', { aweme_id: awemeId, max_count: maxCount, title, cover_url: coverUrl }),
   },
 
   // ========================================================================
@@ -383,6 +396,10 @@ export const api = {
       end_rank?: number; 
     }) =>
       post<{ success: boolean; data: any; message: string }>('/api/hot-comment/crawl', params),
+    
+    /** 获取爬取状态 */
+    getCrawlStatus: () =>
+      get<{ success: boolean; data: { crawling: boolean; crawl_result: any } }>('/api/hot-comment/crawl/status'),
     
     /** 数据预处理（Spark 清洗） */
     dataPreprocess: () =>

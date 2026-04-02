@@ -213,6 +213,10 @@ def crawl_hot_comments(request: HotCommentCrawlRequest) -> Dict[str, Any]:
     - video_urls: 手动提供的视频 URL 列表（可选，推荐使用）
     """
     try:
+        # 设置爬取状态
+        state.hot_comment_crawling = True
+        state.hot_comment_crawl_result = None
+        
         fetcher = _get_fetcher()
         
         # 优先级：video_urls > video_ids > video_count
@@ -260,15 +264,35 @@ def crawl_hot_comments(request: HotCommentCrawlRequest) -> Dict[str, Any]:
                         "cleaned_count": cleaned_count,
                     })
 
-        return {
+        # 保存爬取结果
+        crawl_result = {
             "success": result.get("success", False),
             "data": result,
             "cleaned_results": cleaned_results,
             "message": "爬取完成" if result.get("success") else result.get("error", "爬取失败"),
         }
+        state.hot_comment_crawl_result = crawl_result
+        state.hot_comment_crawling = False
+        
+        return crawl_result
     except Exception as e:
         logger.error(f"爬取热榜评论失败：{e}")
+        state.hot_comment_crawling = False
         raise HTTPException(status_code=500, detail=f"爬取失败：{str(e)}")
+
+
+@router.get("/crawl/status")
+def get_crawl_status() -> Dict[str, Any]:
+    """
+    获取热榜评论爬取状态
+    """
+    return {
+        "success": True,
+        "data": {
+            "crawling": state.hot_comment_crawling,
+            "crawl_result": state.hot_comment_crawl_result,
+        }
+    }
 
 
 def _get_all_comments_files() -> List[str]:
@@ -440,6 +464,7 @@ def analyze_hot_comments(request: AnalyzeHotCommentsRequest) -> Dict[str, Any]:
                     'time_distribution': analysis['analysis']['time_distribution'],
                     'user_activity': analysis['analysis']['user_activity'],
                     'top_comments': analysis['analysis']['top_comments'],
+                    'topics': analysis['analysis'].get('topics', {}),
                     'created_time': datetime.now()
                 }
                 sql, params = HotCommentAnalysisModel.insert_sql(analysis_data)
@@ -1016,7 +1041,7 @@ def get_analysis_list() -> Dict[str, Any]:
                sentiment_positive, sentiment_neutral, sentiment_negative,
                sentiment_positive_rate, sentiment_neutral_rate, sentiment_negative_rate,
                hot_words, location_distribution, time_distribution, 
-               user_activity, top_comments, created_time
+               user_activity, top_comments, topics, created_time
         FROM hot_comment_analysis
         ORDER BY created_time DESC
         """
@@ -1045,6 +1070,12 @@ def get_analysis_list() -> Dict[str, Any]:
                         "positive_rate": float(row['sentiment_positive_rate']) if row['sentiment_positive_rate'] else 0,
                         "neutral_rate": float(row['sentiment_neutral_rate']) if row['sentiment_neutral_rate'] else 0,
                         "negative_rate": float(row['sentiment_negative_rate']) if row['sentiment_negative_rate'] else 0,
+                        "model": "关键词匹配(降级)",  # 添加模型信息
+                    },
+                    "topics": json.loads(row['topics']) if row['topics'] else {
+                        "num_topics": 0,
+                        "topics": [],
+                        "model": "LDA主题模型"
                     },
                     "time_distribution": json.loads(row['time_distribution']) if row['time_distribution'] else {},
                     "user_activity": json.loads(row['user_activity']) if row['user_activity'] else {},

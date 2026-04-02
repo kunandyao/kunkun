@@ -319,7 +319,8 @@ async def get_douyin_hot_history(title_limit: int = 10) -> Dict[str, Any]:
                                 hot_val_num = float(hot_val.replace('万', '0000').replace('w', '0000').replace('W', '0000'))
                                 data.append(hot_val_num)
                             except:
-                                data.append(None)
+                                # 如果转换失败，使用 0 替代
+                                data.append(0)
                         else:
                             data.append(None)
                     

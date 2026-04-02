@@ -23,7 +23,10 @@ from ..lib.douyin.client import DouyinClient
 from ..lib.douyin.request import Request
 from ..lib.comment_analyzer import CommentAnalyzer, analyze_comments
 from ..lib.preprocessing import SparkPreprocessor
+from ..lib.cover_utils import download_cover
+from ..lib.database.models import HotCommentAnalysisModel
 from ..settings import settings
+import json
 
 router = APIRouter(prefix="/api/comment", tags=["评论"])
 
@@ -38,6 +41,8 @@ class CommentCrawlRequest(BaseModel):
 
     aweme_id: str
     max_count: int = 500  # 最多爬取条数，0 表示不限制（按页直到 has_more=0）
+    title: Optional[str] = None  # 作品标题（可选，用于API限流时作为备选）
+    cover_url: Optional[str] = None  # 封面URL（可选，用于API限流时作为备选）
 
 
 class BrowserCrawlRequest(BaseModel):
@@ -422,3 +427,218 @@ def preprocess_comments(request: AnalyzeRequest) -> Dict[str, Any]:
     except Exception as e:
         logger.exception("评论预处理失败")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/crawl-and-analyze")
+def crawl_and_analyze_single_work(request: CommentCrawlRequest) -> Dict[str, Any]:
+    """
+    爬取单个作品评论并进行分析，保存结果到数据库
+    
+    - aweme_id: 作品 ID
+    - max_count: 最多爬取条数，默认 500
+    """
+    aweme_id = request.aweme_id.strip()
+    if not aweme_id:
+        raise HTTPException(status_code=400, detail="aweme_id 不能为空")
+
+    max_count = request.max_count
+    if max_count < 0:
+        max_count = 500
+
+    try:
+        client = _get_client()
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    # 1. 获取作品信息（包括封面）
+    logger.info(f"获取作品信息: {aweme_id}")
+    cover_url = request.cover_url or ""  # 使用前端传递的封面URL作为默认值
+    title = request.title or ""  # 使用前端传递的标题作为默认值
+    author = ""
+    
+    try:
+        # 使用request直接获取，避免quit()导致程序退出
+        from ..lib.douyin.types import APIEndpoint
+        params = {"aweme_id": aweme_id}
+        resp = client.request.getJSON(APIEndpoint.AWEME_DETAIL, params)
+        work_info = resp.get("aweme_detail", {})
+        
+        if not work_info:
+            logger.warning(f"作品详情API获取失败，使用前端传递的信息: {aweme_id}")
+        else:
+            logger.info(f"作品信息获取成功: {aweme_id}, keys={list(work_info.keys())}")
+            
+            # 提取封面URL（抖音的封面在 video.cover.url_list 中）
+            video = work_info.get("video", {})
+            if video:
+                logger.info(f"video字段: {list(video.keys())}")
+                cover = video.get("cover", {})
+                url_list = cover.get("url_list", [])
+                logger.info(f"封面URL列表数量: {len(url_list)}")
+                if url_list:
+                    cover_url = url_list[0]
+                    logger.info(f"封面URL: {cover_url[:80]}...")
+            
+            # 提取标题和作者
+            title = work_info.get("desc", "") or title  # API获取失败时保留前端传递的值
+            author_info = work_info.get("author", {})
+            author = author_info.get("nickname", "") if author_info else ""
+            
+            logger.info(f"提取的信息 - 标题: {title[:50] if title else 'None'}, 作者: {author}")
+    except Exception as e:
+        logger.warning(f"获取作品信息失败，使用前端传递的信息: {e}")
+        # 使用前端传递的信息作为备选
+
+    # 2. 下载封面
+    local_cover_path = None
+    if cover_url:
+        logger.info(f"下载作品封面: {aweme_id}")
+        local_cover_path = download_cover(cover_url, filename=aweme_id)
+
+    # 3. 爬取评论
+    logger.info(f"开始爬取评论: {aweme_id}")
+    all_comments: List[dict] = []
+    cursor = 0
+    page_size = 20
+    max_no_data = 5
+    no_data_count = 0
+
+    while no_data_count < max_no_data:
+        resp = client.fetch_comment_list(
+            aweme_id=aweme_id, cursor=cursor, count=page_size
+        )
+        if not resp:
+            no_data_count += 1
+            time.sleep(0.5)
+            continue
+
+        raw_list = resp.get("comments") or []
+        if not raw_list:
+            no_data_count += 1
+            if not resp.get("has_more", False):
+                break
+            cursor = resp.get("cursor", cursor)
+            time.sleep(0.3)
+            continue
+
+        no_data_count = 0
+        for c in raw_list:
+            all_comments.append(_normalize_comment(c))
+            if max_count and len(all_comments) >= max_count:
+                break
+
+        if max_count and len(all_comments) >= max_count:
+            break
+
+        if not resp.get("has_more", False):
+            break
+        cursor = resp.get("cursor", cursor)
+        time.sleep(0.3)
+
+    total_comments = len(all_comments)
+    
+    if total_comments == 0:
+        return {
+            "success": False,
+            "message": "未爬取到任何评论",
+            "aweme_id": aweme_id,
+        }
+
+    logger.info(f"爬取完成: {total_comments} 条评论")
+
+    # 4. 保存评论到CSV
+    comments_dir = os.path.join(DOWNLOAD_DIR, "comments")
+    os.makedirs(comments_dir, exist_ok=True)
+    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    csv_filename = f"comments_{aweme_id}_{ts}.csv"
+    csv_path = os.path.join(comments_dir, csv_filename)
+
+    fieldnames = [
+        "id", "nickname", "text", "create_time", "digg_count",
+        "reply_count", "ip_label", "is_top", "is_hot",
+    ]
+    try:
+        with open(csv_path, "w", encoding="utf-8-sig", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=fieldnames)
+            w.writeheader()
+            for row in all_comments:
+                w.writerow({k: row.get(k, "") for k in fieldnames})
+        logger.info(f"评论已保存: {csv_path}")
+    except Exception as e:
+        logger.warning(f"评论 CSV 写入失败: {e}")
+        csv_path = None
+
+    # 5. 分析评论
+    logger.info(f"开始分析评论: {aweme_id}")
+    try:
+        analysis_results = analyze_comments(comments=all_comments)
+    except Exception as e:
+        logger.error(f"评论分析失败: {e}")
+        return {
+            "success": False,
+            "message": f"评论分析失败: {str(e)}",
+            "aweme_id": aweme_id,
+            "total_comments": total_comments,
+        }
+
+    # 6. 保存分析结果到数据库
+    logger.info(f"保存分析结果到数据库: {aweme_id}")
+    try:
+        from backend.lib.database import db_manager
+        
+        # 准备数据
+        sentiment = analysis_results.get("sentiment", {})
+        hot_words = analysis_results.get("hot_words", [])
+        location_distribution = analysis_results.get("location_distribution", [])
+        time_distribution = analysis_results.get("time_distribution", {})
+        user_activity = analysis_results.get("user_activity", {})
+        top_comments = analysis_results.get("top_comments", [])
+        topics = analysis_results.get("topics", {})
+        
+        data = {
+            "aweme_id": aweme_id,
+            "hot_id": None,  # 单个作品没有热榜ID
+            "title": title or f"作品-{aweme_id}",
+            "cover_url": local_cover_path or cover_url,
+            "filename": csv_filename if csv_path else f"comments_{aweme_id}",
+            "filepath": csv_path or "",
+            "total_comments": total_comments,
+            "sentiment_positive": sentiment.get("positive", 0),
+            "sentiment_neutral": sentiment.get("neutral", 0),
+            "sentiment_negative": sentiment.get("negative", 0),
+            "sentiment_positive_rate": sentiment.get("positive_rate", 0),
+            "sentiment_neutral_rate": sentiment.get("neutral_rate", 0),
+            "sentiment_negative_rate": sentiment.get("negative_rate", 0),
+            "hot_words": hot_words,
+            "location_distribution": location_distribution,
+            "time_distribution": time_distribution,
+            "user_activity": user_activity,
+            "top_comments": top_comments[:10],  # 只保存前10条
+            "topics": topics,
+            "created_time": datetime.datetime.now(),
+        }
+        
+        # 使用正确的数据库操作方式
+        sql, params = HotCommentAnalysisModel.insert_sql(data)
+        with db_manager.get_cursor() as cursor:
+            cursor.execute(sql, params)
+        
+        logger.info(f"✓ 分析结果已保存到数据库: {aweme_id}")
+        
+    except Exception as e:
+        logger.error(f"保存分析结果到数据库失败: {e}", exc_info=True)
+        # 不影响返回结果，只是记录错误
+
+    return {
+        "success": True,
+        "message": "爬取和分析完成",
+        "aweme_id": aweme_id,
+        "title": title,
+        "author": author,
+        "cover_url": local_cover_path or cover_url,
+        "total_comments": total_comments,
+        "csv_file": csv_path,
+        "analysis": analysis_results,
+    }

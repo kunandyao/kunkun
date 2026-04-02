@@ -36,6 +36,10 @@ class AppState:
         
         # 最新爬取的热榜评论文件列表
         self.latest_hot_comment_files: List[str] = []
+        
+        # 热榜评论爬取状态
+        self.hot_comment_crawling: bool = False
+        self.hot_comment_crawl_result: Optional[Dict[str, Any]] = None
 
         # Aria2 管理器
         self.aria2_manager: Optional[Aria2Manager] = self._init_aria2()

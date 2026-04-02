@@ -361,6 +361,27 @@ export const DetailModal: React.FC<DetailModalProps> = ({
     }
   };
 
+  const crawlAndAnalyzeToDashboard = async () => {
+    if (!work) return;
+    setIsCrawlingComments(true);
+    try {
+      // 传递作品的标题和封面URL给后端（用于API限流时作为备选）
+      const res = await bridge.crawlAndAnalyzeSingleWork(work.id, 200, work.desc, work.cover);
+      if (res.success) {
+        toast.success(`爬取并分析完成！共 ${res.total_comments} 条评论，已保存到数据大屏`);
+        logger.success(`[DetailModal] 单个作品分析完成并保存到数据库: ${work.id}`);
+      } else {
+        toast.error(res.message || '分析失败');
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : '爬取并分析失败';
+      toast.error(msg);
+      logger.error(`[DetailModal] 爬取并分析失败: ${work.id} - ${e}`);
+    } finally {
+      setIsCrawlingComments(false);
+    }
+  };
+
   const openAnalysis = () => {
     if (lastCommentFile) {
       setShowAnalysisModal(true);
@@ -614,6 +635,15 @@ export const DetailModal: React.FC<DetailModalProps> = ({
               >
                 {isCrawlingComments ? <Loader2 className="animate-spin" size={14} /> : <MessageCircle size={14} />}
                 爬取评论
+              </button>
+
+              <button
+                onClick={crawlAndAnalyzeToDashboard}
+                disabled={isCrawlingComments}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-gradient-to-r from-green-500 to-emerald-600 text-white rounded-lg text-xs font-medium hover:from-green-600 hover:to-emerald-700 transition-all active:scale-95 shadow-sm disabled:opacity-60"
+              >
+                {isCrawlingComments ? <Loader2 className="animate-spin" size={14} /> : <BarChart3 size={14} />}
+                爬取并分析
               </button>
             </div>
 

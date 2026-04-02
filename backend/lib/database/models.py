@@ -338,6 +338,7 @@ class HotCommentAnalysisModel:
             time_distribution JSON COMMENT '时间分布',
             user_activity JSON COMMENT '用户活跃度',
             top_comments JSON COMMENT '热门评论',
+            topics JSON COMMENT 'LDA主题分析结果',
             created_time DATETIME NOT NULL COMMENT '分析时间',
             UNIQUE KEY uk_aweme_id (aweme_id),
             INDEX idx_hot_id (hot_id),
@@ -355,8 +356,8 @@ class HotCommentAnalysisModel:
             sentiment_positive, sentiment_neutral, sentiment_negative,
             sentiment_positive_rate, sentiment_neutral_rate, sentiment_negative_rate,
             hot_words, location_distribution, time_distribution, 
-            user_activity, top_comments, created_time
-        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            user_activity, top_comments, topics, created_time
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON DUPLICATE KEY UPDATE
             hot_id = VALUES(hot_id),
             title = VALUES(title),
@@ -375,6 +376,7 @@ class HotCommentAnalysisModel:
             time_distribution = VALUES(time_distribution),
             user_activity = VALUES(user_activity),
             top_comments = VALUES(top_comments),
+            topics = VALUES(topics),
             created_time = VALUES(created_time)
         """
         params = (
@@ -396,6 +398,7 @@ class HotCommentAnalysisModel:
             json.dumps(data.get('time_distribution', {}), ensure_ascii=False),
             json.dumps(data.get('user_activity', {}), ensure_ascii=False),
             json.dumps(data.get('top_comments', []), ensure_ascii=False),
+            json.dumps(data.get('topics', {}), ensure_ascii=False),
             data.get('created_time', datetime.now())
         )
         return sql, params

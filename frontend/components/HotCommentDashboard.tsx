@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import ReactECharts from 'echarts-for-react';
+import { Download, FileText } from 'lucide-react';
 import { api } from '../services/api';
 
 interface RealVideoAnalysis {
@@ -19,6 +20,16 @@ interface RealVideoAnalysis {
       positive_rate: number;
       negative_rate: number;
       neutral_rate: number;
+      model: string;
+    };
+    topics: {
+      num_topics: number;
+      topics: Array<{
+        topic_id: number;
+        keywords: string;
+        top_words: Array<string>;
+      }>;
+      model: string;
     };
     top_comments: Array<{
       nickname: string;
@@ -110,18 +121,26 @@ export const HotCommentDashboard: React.FC<HotCommentDashboardProps> = ({ refres
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    console.log('useEffect 运行，refreshTrigger:', refreshTrigger);
     loadAnalyses();
     loadHotHistory();
   }, [refreshTrigger]);
 
   const loadHotHistory = async () => {
     try {
+      console.log('开始加载热榜历史数据...');
       const result = await api.hot.douyinHistory(10);
-      if (result.success && result.times && result.series) {
+      console.log('热榜历史数据返回:', result);
+      if (result && result.success && result.times && result.series) {
+        console.log('热榜历史数据成功:', { times: result.times, series: result.series });
+        console.log('times长度:', result.times.length);
+        console.log('series长度:', result.series.length);
         setHotHistoryData({
           times: result.times,
           series: result.series
         });
+      } else {
+        console.log('热榜历史数据返回但格式不正确:', result);
       }
     } catch (err) {
       console.error('加载热榜历史数据失败:', err);
@@ -166,6 +185,284 @@ export const HotCommentDashboard: React.FC<HotCommentDashboardProps> = ({ refres
 
   const selectedAnalysis = videoAnalyses[selectedIndex];
   const sentiment = selectedAnalysis ? getSentimentFromAnalysis(selectedAnalysis.analysis) : 'neutral';
+
+  const generatePDFReport = () => {
+    if (!selectedAnalysis) return;
+    
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert('请允许弹出窗口以生成PDF报告');
+      return;
+    }
+
+    const analysis = selectedAnalysis.analysis;
+    const sentimentLabel = getSentimentLabel(sentiment);
+    const sentimentColor = sentiment === 'positive' ? '#10b981' : 
+                          sentiment === 'negative' ? '#ef4444' : 
+                          sentiment === 'controversial' ? '#f97316' : '#6b7280';
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>舆情分析报告 - ${selectedAnalysis.title || selectedAnalysis.file}</title>
+        <style>
+          body {
+            font-family: 'Microsoft YaHei', Arial, sans-serif;
+            padding: 40px;
+            background: #f5f5f5;
+          }
+          .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 40px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+          }
+          .header {
+            text-align: center;
+            border-bottom: 3px solid #3370FF;
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+          }
+          .title {
+            font-size: 28px;
+            font-weight: bold;
+            color: #1D2129;
+            margin-bottom: 10px;
+          }
+          .subtitle {
+            font-size: 14px;
+            color: #86909C;
+          }
+          .section {
+            margin-bottom: 30px;
+          }
+          .section-title {
+            font-size: 18px;
+            font-weight: bold;
+            color: #1D2129;
+            border-left: 4px solid #3370FF;
+            padding-left: 12px;
+            margin-bottom: 15px;
+          }
+          .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+            margin-bottom: 20px;
+          }
+          .stat-card {
+            background: #f7f8fa;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+          }
+          .stat-label {
+            font-size: 12px;
+            color: #86909C;
+            margin-bottom: 5px;
+          }
+          .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #1D2129;
+          }
+          .sentiment-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: bold;
+            color: white;
+            background: ${sentimentColor};
+          }
+          .table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+          }
+          .table th, .table td {
+            border: 1px solid #e5e7eb;
+            padding: 8px 12px;
+            text-align: left;
+          }
+          .table th {
+            background: #f9fafb;
+            font-weight: bold;
+            color: #374151;
+          }
+          .table tr:nth-child(even) {
+            background: #f9fafb;
+          }
+          .footer {
+            text-align: center;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #e5e7eb;
+            color: #86909C;
+            font-size: 12px;
+          }
+          @media print {
+            body { background: white; }
+            .container { box-shadow: none; }
+          }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="header">
+            <div class="title">舆情分析报告</div>
+            <div class="subtitle">${selectedAnalysis.title || selectedAnalysis.file}</div>
+            <div class="subtitle">视频ID: ${selectedAnalysis.aweme_id}</div>
+          </div>
+
+          <div class="section">
+            <div class="section-title">一、概述</div>
+            <div class="stats-grid">
+              <div class="stat-card">
+                <div class="stat-label">评论总数</div>
+                <div class="stat-value">${analysis.total}</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">正面评价</div>
+                <div class="stat-value">${analysis.sentiment.positive_rate}%</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">中性评价</div>
+                <div class="stat-value">${analysis.sentiment.neutral_rate}%</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-label">负面评价</div>
+                <div class="stat-value">${analysis.sentiment.negative_rate}%</div>
+              </div>
+            </div>
+            <p><strong>舆情结论：</strong><span class="sentiment-badge">${sentimentLabel}</span></p>
+          </div>
+
+          <div class="section">
+            <div class="section-title">二、情感分析</div>
+            <table class="table">
+              <tr>
+                <th>情感类型</th>
+                <th>数量</th>
+                <th>占比</th>
+              </tr>
+              <tr>
+                <td>正面</td>
+                <td>${analysis.sentiment.positive}</td>
+                <td>${analysis.sentiment.positive_rate}%</td>
+              </tr>
+              <tr>
+                <td>中性</td>
+                <td>${analysis.sentiment.neutral}</td>
+                <td>${analysis.sentiment.neutral_rate}%</td>
+              </tr>
+              <tr>
+                <td>负面</td>
+                <td>${analysis.sentiment.negative}</td>
+                <td>${analysis.sentiment.negative_rate}%</td>
+              </tr>
+            </table>
+          </div>
+
+          <div class="section">
+            <div class="section-title">三、热门关键词 TOP 10</div>
+            <table class="table">
+              <tr>
+                <th>排名</th>
+                <th>关键词</th>
+                <th>出现次数</th>
+              </tr>
+              ${analysis.hot_words.slice(0, 10).map((word, index) => `
+                <tr>
+                  <td>${index + 1}</td>
+                  <td>${word[0]}</td>
+                  <td>${word[1]}</td>
+                </tr>
+              `).join('')}
+            </table>
+          </div>
+
+          <div class="section">
+            <div class="section-title">四、高赞评论 TOP 5</div>
+            <table class="table">
+              <tr>
+                <th>排名</th>
+                <th>用户</th>
+                <th>评论内容</th>
+                <th>点赞数</th>
+              </tr>
+              ${analysis.top_comments.slice(0, 5).map((comment, index) => `
+                <tr>
+                  <td>${index + 1}</td>
+                  <td>${comment.nickname}</td>
+                  <td>${comment.text.substring(0, 50)}${comment.text.length > 50 ? '...' : ''}</td>
+                  <td>${comment.digg_count}</td>
+                </tr>
+              `).join('')}
+            </table>
+          </div>
+
+          <div class="section">
+            <div class="section-title">五、用户活跃度</div>
+            <table class="table">
+              <tr>
+                <th>指标</th>
+                <th>数值</th>
+              </tr>
+              <tr>
+                <td>总用户数</td>
+                <td>${analysis.user_activity.total_users}</td>
+              </tr>
+              <tr>
+                <td>人均评论数</td>
+                <td>${analysis.user_activity.avg_comments_per_user.toFixed(2)}</td>
+              </tr>
+            </table>
+          </div>
+
+          ${analysis.topics && analysis.topics.topics && analysis.topics.topics.length > 0 ? `
+          <div class="section">
+            <div class="section-title">六、LDA 主题分析</div>
+            <table class="table">
+              <tr>
+                <th>主题ID</th>
+                <th>关键词</th>
+              </tr>
+              ${analysis.topics.topics.map((topic, index) => `
+                <tr>
+                  <td>主题${topic.topic_id}</td>
+                  <td>${topic.keywords}</td>
+                </tr>
+              `).join('')}
+            </table>
+            <p><strong>模型：</strong>${analysis.topics.model}</p>
+          </div>
+          ` : ''}
+
+          <div class="section">
+            <div class="section-title">七、分析模型</div>
+            <p><strong>情感分析模型：</strong>${analysis.sentiment.model}</p>
+            ${analysis.topics && analysis.topics.model ? `<p><strong>主题分析模型：</strong>${analysis.topics.model}</p>` : ''}
+          </div>
+
+          <div class="footer">
+            <p>报告生成时间：${new Date().toLocaleString('zh-CN')}</p>
+            <p>数据来源：抖音热榜评论分析系统</p>
+          </div>
+        </div>
+      </body>
+      </html>
+    `);
+
+    printWindow.document.close();
+    
+    setTimeout(() => {
+      printWindow.print();
+    }, 500);
+  };
 
   const sentimentPieChartOption = selectedAnalysis ? {
     tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
@@ -344,7 +641,7 @@ export const HotCommentDashboard: React.FC<HotCommentDashboardProps> = ({ refres
       formatter: function(params: any) {
         let result = params[0].name + '<br/>';
         params.forEach((param: any) => {
-          result += `${param.marker} ${param.seriesName}: ${param.value}M<br/>`;
+          result += `${param.marker} ${param.seriesName}: ${param.value.toFixed(2)}%<br/>`;
         });
         return result;
       }
@@ -363,10 +660,11 @@ export const HotCommentDashboard: React.FC<HotCommentDashboardProps> = ({ refres
     // Y轴
     yAxis: {
       type: 'value',
+      name: '变化率(%)',
       axisLine: { lineStyle: { color: '#444' } },
       axisLabel: {
         color: '#ffffff',
-        formatter: '{value}M'
+        formatter: '{value}%'
       },
       splitLine: {
         show: true,
@@ -374,20 +672,38 @@ export const HotCommentDashboard: React.FC<HotCommentDashboardProps> = ({ refres
           color: '#333',
           type: 'dashed'
         }
-      },
-      min: 0
+      }
     },
-    // 系列数据 - 将数据转换为百万单位
+    // 系列数据 - 计算变化率
     series: hotHistoryData.series.map((s, idx) => {
       const colors = [
         '#9370DB', '#FF69B4', '#FFA500', '#3CB371', '#4169E1',
         '#9370DB', '#FF69B4', '#FFA500', '#3CB371', '#4169E1'
       ];
+      
+      // 计算变化率：以第一个时间点为基准
+      const baseValue = s.data[0];
+      const changeRateData = s.data.map((val: number | null | undefined) => {
+        // 处理无效值
+        if (baseValue === 0 || !baseValue) return 0;
+        if (val === null || val === undefined || !val) return 0;
+        
+        // 计算变化率
+        const changeRate = ((val - baseValue) / baseValue) * 100;
+        
+        // 处理异常值
+        if (isNaN(changeRate) || !isFinite(changeRate)) {
+          return 0;
+        }
+        
+        return changeRate;
+      });
+      
       return {
         name: s.name,
         type: 'line',
         smooth: true,
-        data: s.data.map((val: number) => Number((val / 1000000).toFixed(1))),
+        data: changeRateData,
         lineStyle: {
           width: 2,
           color: colors[idx % colors.length],
@@ -454,12 +770,23 @@ export const HotCommentDashboard: React.FC<HotCommentDashboardProps> = ({ refres
               共分析 {videoAnalyses.length} 个视频，{videoAnalyses.reduce((sum, v) => sum + v.total_comments, 0)} 条评论
             </p>
           </div>
-          <button
-            onClick={loadAnalyses}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors flex items-center gap-2 text-sm"
-          >
-            🔄 刷新数据
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={generatePDFReport}
+              disabled={!selectedAnalysis}
+              className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-lg transition-colors flex items-center gap-2 text-sm"
+              title="生成PDF报告"
+            >
+              <FileText size={16} />
+              生成PDF报告
+            </button>
+            <button
+              onClick={loadAnalyses}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors flex items-center gap-2 text-sm"
+            >
+              🔄 刷新数据
+            </button>
+          </div>
         </div>
       </div>
 
@@ -549,7 +876,7 @@ export const HotCommentDashboard: React.FC<HotCommentDashboardProps> = ({ refres
         <div className="px-6 py-4">
           <div className="max-w-7xl mx-auto">
           {/* Hot Trend Chart */}
-          {hotHistoryData && hotHistoryData.times.length > 1 && (
+          {hotHistoryData ? (
             <div className="mb-6">
               <div className="bg-slate-800/50 backdrop-blur-lg border border-slate-700/50 rounded-xl p-4">
                 <h3 className="text-base font-bold text-white mb-3 flex items-center gap-2">
@@ -558,6 +885,18 @@ export const HotCommentDashboard: React.FC<HotCommentDashboardProps> = ({ refres
                 </h3>
                 <div className="h-72">
                   <ReactECharts option={hotTrendChartOption} style={{ height: '100%' }} />
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="mb-6">
+              <div className="bg-slate-800/50 backdrop-blur-lg border border-slate-700/50 rounded-xl p-4">
+                <h3 className="text-base font-bold text-white mb-3 flex items-center gap-2">
+                  <span className="w-2 h-2 bg-gradient-to-r from-red-500 to-orange-500 rounded-full"></span>
+                  热榜热度趋势 TOP 10
+                </h3>
+                <div className="h-72 flex items-center justify-center">
+                  <p className="text-slate-400">加载热榜历史数据中...</p>
                 </div>
               </div>
             </div>
@@ -672,6 +1011,63 @@ export const HotCommentDashboard: React.FC<HotCommentDashboardProps> = ({ refres
               <div className="h-64">
                 <ReactECharts option={timeLineChartOption} style={{ height: '100%' }} />
               </div>
+            </div>
+          </div>
+
+          {/* LDA 主题分析 */}
+          {selectedAnalysis.analysis.topics && (
+            <div className="bg-slate-800/50 backdrop-blur-lg border border-slate-700/50 rounded-xl p-4 mb-6">
+              <h3 className="text-base font-bold text-white mb-3 flex items-center gap-2">
+                <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+                LDA 主题分析
+              </h3>
+              <div className="space-y-4">
+                {selectedAnalysis.analysis.topics.topics && selectedAnalysis.analysis.topics.topics.length > 0 ? (
+                  selectedAnalysis.analysis.topics.topics.map((topic, index) => (
+                    <div key={topic.topic_id} className="bg-slate-700/30 rounded-lg p-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="text-sm font-medium text-white">主题 {topic.topic_id}</h4>
+                        <span className="text-xs text-gray-400">{topic.top_words.length} 个关键词</span>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {topic.top_words.map((word, idx) => (
+                          <span key={idx} className="px-2 py-1 bg-slate-600/50 rounded-full text-xs text-gray-300">
+                            {word}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="bg-slate-700/30 rounded-lg p-3 text-center">
+                    <p className="text-gray-400">暂无主题分析数据</p>
+                  </div>
+                )}
+                <div className="mt-4 text-sm text-gray-400">
+                  <span className="font-medium text-gray-300">分析模型：</span>
+                  {selectedAnalysis.analysis.topics.model}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 情感分析模型信息 */}
+          <div className="bg-slate-800/50 backdrop-blur-lg border border-slate-700/50 rounded-xl p-4 mb-6">
+            <h3 className="text-base font-bold text-white mb-3 flex items-center gap-2">
+              <span className="w-2 h-2 bg-rose-500 rounded-full"></span>
+              分析模型信息
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-slate-700/30 rounded-lg p-3">
+                <div className="text-sm font-medium text-white mb-1">情感分析模型</div>
+                <div className="text-gray-300 text-sm">{selectedAnalysis.analysis.sentiment.model}</div>
+              </div>
+              {selectedAnalysis.analysis.topics && selectedAnalysis.analysis.topics.model && (
+                <div className="bg-slate-700/30 rounded-lg p-3">
+                  <div className="text-sm font-medium text-white mb-1">主题分析模型</div>
+                  <div className="text-gray-300 text-sm">{selectedAnalysis.analysis.topics.model}</div>
+                </div>
+              )}
             </div>
           </div>
 

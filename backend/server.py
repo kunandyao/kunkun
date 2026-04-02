@@ -166,7 +166,14 @@ async def events_stream():
 # ============================================================================
 
 _frontend_dist_dir = os.path.join(RESOURCE_ROOT, "frontend", "dist")
+_backend_static_dir = os.path.join(RESOURCE_ROOT, "static")
 
+# 挂载后端静态文件（封面图片等）
+if os.path.exists(_backend_static_dir):
+    app.mount("/static", StaticFiles(directory=_backend_static_dir), name="backend-static")
+    logger.info(f"✓ 后端静态文件已挂载: {_backend_static_dir}")
+
+# 挂载前端静态文件
 if os.path.exists(_frontend_dist_dir):
     app.mount("/", StaticFiles(directory=_frontend_dist_dir, html=True), name="static")
     logger.info(f"✓ 前端静态文件已挂载: {_frontend_dist_dir}")

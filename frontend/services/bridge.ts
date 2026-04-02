@@ -64,6 +64,8 @@ export interface Bridge {
   preprocessComments: (csvFile?: string) => Promise<{ success: boolean; message: string; input_file: string; output_path: string; total_records: number; processed_records: number }>;
   /** 获取最新的分析报告 */
   getAnalysisReport: (reportType?: 'html' | 'wordcloud') => Promise<{ file_path: string; filename: string; created_at: string }>;
+  /** 爬取单个作品评论并分析，保存到数据库 */
+  crawlAndAnalyzeSingleWork: (awemeId: string, maxCount?: number, title?: string, coverUrl?: string) => Promise<{ success: boolean; message: string; aweme_id: string; title?: string; author?: string; cover_url?: string; total_comments: number; csv_file?: string; analysis?: Record<string, unknown> }>;
 }
 
 export const bridge: Bridge = {
@@ -293,6 +295,23 @@ export const bridge: Bridge = {
       return await api.comment.getAnalysisReport(reportType);
     } catch (error) {
       handleError(error, { reportType }, { customMessage: '获取分析报告失败' });
+      throw error;
+    }
+  },
+
+  /** 爬取单个作品评论并分析，保存到数据库 */
+  crawlAndAnalyzeSingleWork: async (awemeId: string, maxCount = 500, title?: string, coverUrl?: string) => {
+    try {
+      logger.api.request('crawl and analyze single work', { awemeId, maxCount, title, coverUrl });
+      const result = await api.comment.crawlAndAnalyze(awemeId, maxCount, title, coverUrl);
+      logger.api.response('crawl and analyze single work', { 
+        success: result.success, 
+        total: result.total_comments,
+        title: result.title 
+      });
+      return result;
+    } catch (error) {
+      handleError(error, { awemeId, maxCount, title, coverUrl }, { customMessage: '爬取并分析单个作品失败' });
       throw error;
     }
   },
