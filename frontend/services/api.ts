@@ -55,22 +55,13 @@ export interface TaskStatus {
   error?: string;
   created_at: number;
   updated_at: number;
-  aria2_conf?: string;
+
 }
 
 /** 健康状态 */
 export interface HealthStatus {
   ready: boolean;
-  aria2: boolean;
-  config: boolean;
   error?: string;
-}
-
-/** Aria2 配置 */
-export interface Aria2Config {
-  host: string;
-  port: number;
-  secret: string;
 }
 
 /** 评论项（接口返回结构） */
@@ -244,29 +235,7 @@ export const api = {
       get<DouyinWork[]>(`/api/task/results/${encodeURIComponent(taskId)}`),
   },
   
-  // ========================================================================
-  // Aria2 管理
-  // ========================================================================
-  aria2: {
-    /** 获取 Aria2 配置 */
-    config: () => get<Aria2Config>('/api/aria2/config'),
-    
-    /** 获取 Aria2 状态 */
-    status: async () => {
-      const result = await get<{ connected: boolean }>('/api/aria2/status');
-      return result.connected;
-    },
-    
-    /** 启动 Aria2 服务 */
-    start: () => post<{ status: string; message: string }>('/api/aria2/start'),
-    
-    /** 获取配置文件路径 */
-    configPath: async (taskId?: string) => {
-      const query = taskId ? `?task_id=${encodeURIComponent(taskId)}` : '';
-      const result = await get<{ config_path: string }>(`/api/aria2/config-path${query}`);
-      return result.config_path;
-    },
-  },
+
   
   // ========================================================================
   // 文件操作

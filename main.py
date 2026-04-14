@@ -30,7 +30,6 @@ from pydantic import BaseModel
 
 from backend.constants import RESOURCE_ROOT, SERVER_DEFAULTS
 from backend.routers import (
-    aria2_router,
     auth_router,
     comment_router,
     file_router,
@@ -52,8 +51,6 @@ class HealthResponse(BaseModel):
     """健康检查响应"""
 
     ready: bool
-    aria2: bool
-    config: bool
     error: str | None
 
 
@@ -133,7 +130,6 @@ app.include_router(task_router)
 app.include_router(auth_router)
 app.include_router(comment_router)
 app.include_router(settings_router)
-app.include_router(aria2_router)
 app.include_router(file_router)
 app.include_router(system_router)
 app.include_router(hot_router)

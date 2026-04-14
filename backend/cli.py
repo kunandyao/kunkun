@@ -292,7 +292,7 @@ def start(url, limit, no_download, type, path, cookie, filters):
             from backend.lib.download import download
 
             logger.info("开始下载文件...")
-            download(douyin.down_path, douyin.aria2_conf)
+            # 下载功能已移除，不再需要 aria2_conf
 
         return True
 

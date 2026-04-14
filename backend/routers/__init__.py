@@ -5,7 +5,6 @@
 """
 
 from .auth import router as auth_router
-from .aria2 import router as aria2_router
 from .comment import router as comment_router
 from .file import router as file_router
 from .hot import router as hot_router
@@ -19,7 +18,6 @@ __all__ = [
     "task_router",
     "comment_router",
     "settings_router",
-    "aria2_router",
     "file_router",
     "system_router",
     "hot_router",

@@ -11,7 +11,7 @@ from fastapi import APIRouter, HTTPException
 from loguru import logger
 from pydantic import BaseModel, Field
 
-from ..constants import ARIA2_DEFAULTS, DEFAULT_SETTINGS, DOWNLOAD_DEFAULTS
+from ..constants import DEFAULT_SETTINGS, DOWNLOAD_DEFAULTS
 from ..settings import settings
 
 router = APIRouter(prefix="/api/settings", tags=["设置管理"])
@@ -33,9 +33,6 @@ class SettingsUpdate(BaseModel):
     windowWidth: Optional[int] = Field(None, ge=800, le=3840)
     windowHeight: Optional[int] = Field(None, ge=600, le=2160)
     enableIncrementalFetch: Optional[bool] = None
-    aria2Host: Optional[str] = None
-    aria2Port: Optional[int] = Field(None, ge=1, le=65535)
-    aria2Secret: Optional[str] = None
 
 
 class SettingsResponse(BaseModel):
@@ -49,9 +46,6 @@ class SettingsResponse(BaseModel):
     windowWidth: int = DEFAULT_SETTINGS["windowWidth"]
     windowHeight: int = DEFAULT_SETTINGS["windowHeight"]
     enableIncrementalFetch: bool = True
-    aria2Host: str = ARIA2_DEFAULTS["HOST"]
-    aria2Port: int = ARIA2_DEFAULTS["PORT"]
-    aria2Secret: str = ""
 
 
 class FirstRunResponse(BaseModel):

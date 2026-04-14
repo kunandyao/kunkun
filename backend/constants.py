@@ -21,14 +21,6 @@ RESOURCE_ROOT = get_resource_root()
 CONFIG_DIR = os.path.join(PROJECT_ROOT, "config")
 DOWNLOAD_DIR = os.path.join(PROJECT_ROOT, "download")
 SETTINGS_FILE = os.path.join(CONFIG_DIR, "settings.json")
-ARIA2_CONF_FILE = os.path.join(CONFIG_DIR, "aria2.conf")
-
-# Aria2 默认配置
-ARIA2_DEFAULTS = {
-    "HOST": "localhost",
-    "PORT": 6800,
-    "SECRET": "douyin_crawler_default_secret",
-}
 
 # 下载配置默认值
 DOWNLOAD_DEFAULTS = {
@@ -46,9 +38,6 @@ DEFAULT_SETTINGS = {
     "windowWidth": 1280,
     "windowHeight": 720,
     "enableIncrementalFetch": True,
-    "aria2Host": ARIA2_DEFAULTS["HOST"],
-    "aria2Port": ARIA2_DEFAULTS["PORT"],
-    "aria2Secret": ARIA2_DEFAULTS["SECRET"],
 }
 
 # 服务器默认配置

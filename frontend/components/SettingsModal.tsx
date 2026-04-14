@@ -2,7 +2,6 @@
 import { ChevronDown, ChevronUp, ExternalLink, FolderOpen, LogIn, Save, X } from 'lucide-react';
 import React, { useEffect, useState } from 'react';
 import { APP_DEFAULTS } from '../constants';
-import { aria2Service } from '../services/aria2Service';
 import { bridge, isGUIMode } from '../services/bridge';
 import { logger } from '../services/logger';
 import { AppSettings } from '../types';
@@ -89,10 +88,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
     downloadPath: APP_DEFAULTS.DOWNLOAD_PATH,
     maxRetries: APP_DEFAULTS.MAX_RETRIES,
     maxConcurrency: APP_DEFAULTS.MAX_CONCURRENCY,
-    enableIncrementalFetch: APP_DEFAULTS.ENABLE_INCREMENTAL_FETCH,
-    aria2Host: APP_DEFAULTS.ARIA2_HOST,
-    aria2Port: APP_DEFAULTS.ARIA2_PORT,
-    aria2Secret: APP_DEFAULTS.ARIA2_SECRET
+    enableIncrementalFetch: APP_DEFAULTS.ENABLE_INCREMENTAL_FETCH
   });
   const [isSaving, setIsSaving] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
@@ -155,16 +151,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
     try {
       await bridge.saveSettings(settings);
       logger.success('✓ 配置保存成功');
-
-      // 即时更新Aria2配置
-      try {
-        await aria2Service.updateGlobalOptions({
-          'max-concurrent-downloads': settings.maxConcurrency.toString(),
-          'max-tries': settings.maxRetries.toString(),
-        });
-      } catch (err) {
-        // 错误已在aria2Service中处理和记录
-      }
 
       toast.success('配置保存成功');
       // 等待后端日志传递到前端（100ms足够）
@@ -325,6 +311,70 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
             )}
             <p className="mt-1.5 text-xs text-gray-400">
               需要登录 Cookie 才能使用。
+            </p>
+          </div>
+
+          {/* User-Agent Setting */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <label htmlFor="user-agent-input" className="block text-sm font-semibold text-gray-700">
+                User-Agent 设置
+              </label>
+              <button
+                onClick={async () => {
+                  try {
+                    const text = await bridge.getClipboardText();
+                    if (!text) {
+                      toast.info('剪贴板为空');
+                      return;
+                    }
+                    setSettings({ ...settings, userAgent: text.trim() });
+                    if (errors.userAgent) {
+                      setErrors(prev => {
+                        const newErrors = { ...prev };
+                        delete newErrors.userAgent;
+                        return newErrors;
+                      });
+                    }
+                    toast.success('已粘贴剪贴板内容');
+                  } catch (err) {
+                    console.error('粘贴失败:', err);
+                    toast.error('粘贴失败，请手动输入');
+                  }
+                }}
+                className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg flex items-center gap-1 transition-colors"
+                title="一键粘贴剪贴板内容"
+              >
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                </svg>
+                粘贴
+              </button>
+            </div>
+            <textarea
+              id="user-agent-input"
+              name="userAgent"
+              value={settings.userAgent}
+              onChange={(e) => {
+                setSettings({ ...settings, userAgent: e.target.value });
+                // 清除userAgent错误
+                if (errors.userAgent) {
+                  setErrors(prev => {
+                    const newErrors = { ...prev };
+                    delete newErrors.userAgent;
+                    return newErrors;
+                  });
+                }
+              }}
+              placeholder="请输入与获取 Cookie 相同的浏览器 User-Agent..."
+              className={`w-full h-24 px-4 py-3 border rounded-xl bg-gray-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all resize-none ${errors.userAgent ? 'border-red-500 focus:border-red-500 focus:ring-red-500/20' : 'border-gray-200 focus:border-blue-500'
+                }`}
+            />
+            {errors.userAgent && (
+              <p className="mt-1.5 text-xs text-red-500">{errors.userAgent}</p>
+            )}
+            <p className="mt-1.5 text-xs text-gray-400">
+              请填写与获取 Cookie 相同的浏览器 User-Agent，以避免被限流。
             </p>
           </div>
 

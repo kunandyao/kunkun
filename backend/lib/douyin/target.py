@@ -188,9 +188,7 @@ class TargetHandler:
         down_path = os.path.join(
             self.down_path, sanitize_filename(f"{self.type}_{self.title}")
         )
-        aria2_conf = f"{down_path}.txt"
-
-        return self.title, down_path, aria2_conf, self.info, self.render_data
+        return self.title, down_path, None, self.info, self.render_data
 
     def _fetch_from_html(self, optional: bool = False):
         """从HTML页面获取目标信息。optional=True 时失败不 quit，仅留空 render_data（供单条视频回退 API）。"""

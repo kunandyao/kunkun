@@ -21,6 +21,7 @@ interface DatabaseHotItem {
   title: string;
   hot_value: string;
   video_id: string | null;
+  aweme_id: string | null;
   crawl_time: string | null;
   url: string;
   mobileUrl: string;
@@ -36,7 +37,14 @@ export const HotSearchDashboard: React.FC<HotSearchDashboardProps> = ({ setActiv
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
-  const [autoRefresh, setAutoRefresh] = useState(false);
+  const [autoRefresh, setAutoRefresh] = useState(() => {
+    const saved = localStorage.getItem('hotSearchAutoRefresh');
+    return saved ? JSON.parse(saved) : false;
+  });
+  const [autoRefreshMode, setAutoRefreshMode] = useState<'database' | 'crawl'>(() => {
+    const saved = localStorage.getItem('hotSearchAutoRefreshMode');
+    return saved ? (saved as 'database' | 'crawl') : 'crawl';
+  });
   const [useDatabase, setUseDatabase] = useState(true);  // 默认从数据库读取
   const [dbStatus, setDbStatus] = useState<{isStale?: boolean; timeAgo?: string}>({});
   const [previousHotData, setPreviousHotData] = useState<Record<string, HotItem>>({});  // 保存上一次的数据
@@ -68,7 +76,7 @@ export const HotSearchDashboard: React.FC<HotSearchDashboardProps> = ({ setActiv
             mobileUrl: item.mobileUrl,
             hotValue: item.hot_value,
             rank: item.rank,
-            video_id: item.video_id || undefined,
+            video_id: item.aweme_id || item.video_id || undefined,  // 优先使用 aweme_id，否则使用 video_id
             crawl_time: item.crawl_time || undefined,
           };
         });
@@ -153,14 +161,28 @@ export const HotSearchDashboard: React.FC<HotSearchDashboardProps> = ({ setActiv
   }, []);
 
   useEffect(() => {
+    localStorage.setItem('hotSearchAutoRefresh', JSON.stringify(autoRefresh));
+  }, [autoRefresh]);
+
+  useEffect(() => {
+    localStorage.setItem('hotSearchAutoRefreshMode', autoRefreshMode);
+  }, [autoRefreshMode]);
+
+  useEffect(() => {
     let interval: NodeJS.Timeout;
     if (autoRefresh) {
-      interval = setInterval(fetchHotData, 60000); // 每分钟刷新一次
+      interval = setInterval(async () => {
+        if (autoRefreshMode === 'crawl') {
+          await refreshToDatabase(); // 重新爬取数据
+        } else {
+          await fetchHotData(); // 从数据库获取数据
+        }
+      }, 1800000); // 每半小时刷新一次
     }
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [autoRefresh]);
+  }, [autoRefresh, autoRefreshMode]);
 
   const hotItems = Object.entries(hotData).map(([title, data], index) => {
     const linkUrl = data.mobileUrl || data.url;
@@ -211,16 +233,28 @@ export const HotSearchDashboard: React.FC<HotSearchDashboardProps> = ({ setActiv
               <TrendingUp size={16} />
               刷新到数据库
             </button>
-            <button
-              onClick={() => setAutoRefresh(!autoRefresh)}
-              className={`px-3 py-2 rounded-md text-sm font-medium transition-all ${
-                autoRefresh
-                  ? 'bg-[#00B42A] text-white'
-                  : 'bg-white text-[#4E5969] border border-[#DEE0E3] hover:bg-[#F7F8FA]'
-              }`}
-            >
-              {autoRefresh ? '自动刷新：开启' : '自动刷新：关闭'}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setAutoRefresh(!autoRefresh)}
+                className={`px-3 py-2 rounded-md text-sm font-medium transition-all ${
+                  autoRefresh
+                    ? 'bg-[#00B42A] text-white'
+                    : 'bg-white text-[#4E5969] border border-[#DEE0E3] hover:bg-[#F7F8FA]'
+                }`}
+              >
+                {autoRefresh ? '自动刷新：每半小时' : '自动刷新：关闭'}
+              </button>
+              {autoRefresh && (
+                <select
+                  value={autoRefreshMode}
+                  onChange={(e) => setAutoRefreshMode(e.target.value as 'database' | 'crawl')}
+                  className="px-3 py-2 bg-white border border-[#DEE0E3] rounded-md text-sm font-medium text-[#4E5969] hover:bg-[#F7F8FA] transition-all"
+                >
+                  <option value="crawl">重新爬取数据</option>
+                  <option value="database">仅从数据库获取</option>
+                </select>
+              )}
+            </div>
             <button
               onClick={fetchHotData}
               disabled={loading}
@@ -275,11 +309,35 @@ export const HotSearchDashboard: React.FC<HotSearchDashboardProps> = ({ setActiv
             
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
               {top3Items.map((item) => {
-                const originalItem = Object.values(hotData)[item.rank - 1];
+                const originalItem = hotData[item.title];
                 return (
                   <div
                     key={item.title}
-                    className="bg-white rounded-lg p-4 border border-[#DEE0E3] hover:shadow-md transition-all group"
+                    className="bg-white rounded-lg p-4 border border-[#DEE0E3] hover:shadow-md transition-all group cursor-pointer"
+                    onClick={() => {
+                      if (originalItem?.video_id) {
+                        // 检查 video_id 是否为 19 位数字（真正的抖音视频 ID）
+                        const videoIdStr = String(originalItem.video_id);
+                        if (videoIdStr.length === 19 && /^\d+$/.test(videoIdStr)) {
+                          // 是真正的视频 ID，跳转到抖音视频页面
+                          const videoUrl = `https://www.douyin.com/video/${originalItem.video_id}`;
+                          window.open(videoUrl, '_blank');
+                        } else {
+                          // 是热榜话题 ID，跳转到热榜链接
+                          if (item.linkUrl) {
+                            window.open(item.linkUrl, '_blank');
+                          }
+                        }
+                      } else if (item.linkUrl) {
+                        // 如果没有视频ID，使用热榜链接
+                        window.open(item.linkUrl, '_blank');
+                      }
+                    }}
+                    title={originalItem?.video_id ? 
+                      (String(originalItem.video_id).length === 19 ? 
+                        `点击跳转到视频 (ID: ${originalItem.video_id})` : 
+                        `点击跳转到热榜 (ID: ${originalItem.video_id})`
+                      ) : '点击跳转到热榜'}
                   >
                     <div className="flex items-start gap-3">
                       <div
@@ -296,7 +354,7 @@ export const HotSearchDashboard: React.FC<HotSearchDashboardProps> = ({ setActiv
                         {item.rank}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <h3 className="text-sm font-medium text-[#1D2129] line-clamp-2 mb-2">
+                        <h3 className="text-sm font-medium text-[#1D2129] line-clamp-2 mb-2 group-hover:text-[#3370FF] transition-colors">
                           {item.title}
                         </h3>
                         <div className="flex items-center justify-between">
@@ -307,7 +365,10 @@ export const HotSearchDashboard: React.FC<HotSearchDashboardProps> = ({ setActiv
                             </div>
                           )}
                           <button
-                            onClick={() => originalItem && handleAnalyzeHotItem(originalItem)}
+                            onClick={(e) => {
+                              e.stopPropagation(); // 阻止冒泡
+                              originalItem && handleAnalyzeHotItem(originalItem);
+                            }}
                             disabled={!originalItem?.video_id}
                             className={`p-2 rounded-md transition-all disabled:opacity-30 disabled:cursor-not-allowed ${
                               originalItem?.video_id
@@ -335,11 +396,35 @@ export const HotSearchDashboard: React.FC<HotSearchDashboardProps> = ({ setActiv
               </div>
               <div className="divide-y divide-[#EDEEF0]">
                 {otherItems.map((item) => {
-                  const originalItem = Object.values(hotData)[item.rank - 1];
+                  const originalItem = hotData[item.title];
                   return (
                     <div
                       key={item.title}
-                      className="px-4 py-3 hover:bg-[#F7F8FA] transition-all group"
+                      className="px-4 py-3 hover:bg-[#F7F8FA] transition-all group cursor-pointer"
+                      onClick={() => {
+                        if (originalItem?.video_id) {
+                          // 检查 video_id 是否为 19 位数字（真正的抖音视频 ID）
+                          const videoIdStr = String(originalItem.video_id);
+                          if (videoIdStr.length === 19 && /^\d+$/.test(videoIdStr)) {
+                            // 是真正的视频 ID，跳转到抖音视频页面
+                            const videoUrl = `https://www.douyin.com/video/${originalItem.video_id}`;
+                            window.open(videoUrl, '_blank');
+                          } else {
+                            // 是热榜话题 ID，跳转到热榜链接
+                            if (item.linkUrl) {
+                              window.open(item.linkUrl, '_blank');
+                            }
+                          }
+                        } else if (item.linkUrl) {
+                          // 如果没有视频ID，使用热榜链接
+                          window.open(item.linkUrl, '_blank');
+                        }
+                      }}
+                      title={originalItem?.video_id ? 
+                        (String(originalItem.video_id).length === 19 ? 
+                          '点击跳转到视频' : 
+                          '点击跳转到热榜'
+                        ) : '点击跳转到热榜'}
                     >
                       <div className="flex items-center gap-3">
                         <div
@@ -352,7 +437,7 @@ export const HotSearchDashboard: React.FC<HotSearchDashboardProps> = ({ setActiv
                           {item.rank}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <h3 className="text-sm font-medium text-[#1D2129] line-clamp-1 mb-1">
+                          <h3 className="text-sm font-medium text-[#1D2129] line-clamp-1 mb-1 group-hover:text-[#3370FF] transition-colors">
                             {item.title}
                           </h3>
                           {item.hotValue && (
@@ -363,7 +448,10 @@ export const HotSearchDashboard: React.FC<HotSearchDashboardProps> = ({ setActiv
                           )}
                         </div>
                         <button
-                          onClick={() => originalItem && handleAnalyzeHotItem(originalItem)}
+                          onClick={(e) => {
+                            e.stopPropagation(); // 阻止冒泡
+                            originalItem && handleAnalyzeHotItem(originalItem);
+                          }}
                           disabled={!originalItem?.video_id}
                           className={`p-2 rounded-md transition-all disabled:opacity-30 disabled:cursor-not-allowed ${
                             originalItem?.video_id

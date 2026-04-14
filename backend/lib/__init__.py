@@ -14,8 +14,7 @@
   - request.py: HTTP请求封装，处理签名和Cookie
   - js/: JavaScript脚本（签名生成）
 - cookies.py: Cookie管理和验证
-- download.py: 文件下载管理（aria2配置生成）
-- aria2_manager.py: Aria2进程管理和配置生成
+- download.py: 文件下载管理
 
 使用示例：
     from backend.lib.douyin import Douyin

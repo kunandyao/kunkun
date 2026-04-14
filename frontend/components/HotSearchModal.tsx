@@ -1,14 +1,6 @@
 import { X, RefreshCw, ExternalLink } from 'lucide-react';
 import React, { useState, useEffect } from 'react';
-import { api } from '../services/api';
-
-interface HotItem {
-  title: string;
-  ranks: number[];
-  url: string;
-  mobileUrl: string;
-  hotValue: string;
-}
+import { api, DouyinHotItem } from '../services/api';
 
 interface HotSearchModalProps {
   isOpen: boolean;
@@ -16,7 +8,7 @@ interface HotSearchModalProps {
 }
 
 export const HotSearchModal: React.FC<HotSearchModalProps> = ({ isOpen, onClose }) => {
-  const [hotData, setHotData] = useState<Record<string, HotItem>>({});
+  const [hotData, setHotData] = useState<Record<string, DouyinHotItem>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);

@@ -10,7 +10,6 @@ export enum TaskType {
   SEARCH = 'search',         // 关键词搜索
   FOLLOWING = 'following',   // 用户关注
   FOLLOWER = 'follower',     // 用户粉丝
-  DOWNLOAD_MANAGER = 'download_manager', // 下载管理
   HOT_SEARCH = 'hot_search', // 热搜功能
   HOT_COMMENT = 'hot_comment', // 热榜评论分析
   HOT_COMMENT_DASHBOARD = 'hot_comment_dashboard', // 热榜评论大屏
@@ -45,19 +44,6 @@ export interface DouyinWork {
   duration?: number; // 视频时长（毫秒）
 }
 
-export interface DownloadProgress {
-  id: string;
-  work_id?: string;
-  filename: string;
-  progress: number; // 0-100
-  status: 'pending' | 'downloading' | 'completed' | 'error' | 'canceled' | 'paused';
-  speed: number; // B/s
-  path: string;
-  error?: string;
-  totalLength: number;
-  completedLength: number;
-}
-
 export interface AppSettings {
   cookie: string;
   userAgent: string;
@@ -65,16 +51,6 @@ export interface AppSettings {
   maxRetries: number;
   maxConcurrency: number;
   enableIncrementalFetch: boolean;
-  aria2Host: string;
-  aria2Port: number;
-  aria2Secret: string;
-}
-
-export interface GlobalDownloadStat {
-  downloadSpeed: string;
-  numActive: string;
-  numWaiting: string;
-  numStopped: string;
 }
 
 // ============================================================================

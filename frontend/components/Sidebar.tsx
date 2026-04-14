@@ -26,11 +26,6 @@ interface SidebarProps {
   onOpenSettings: () => void;
   showLogs: boolean;
   setShowLogs: (show: boolean) => void;
-  isDownloading: boolean;
-  downloadStats: {
-    activeCount: number;
-    downloadSpeed: number;
-  };
   currentUser: User | null;
   onOpenAuth: () => void;
   onLogout: () => void;
@@ -50,7 +45,7 @@ const menuItems = [
 
 export const Sidebar: React.FC<SidebarProps> = ({
   activeTab, setActiveTab, onOpenSettings, showLogs, setShowLogs,
-  isDownloading, downloadStats, currentUser, onOpenAuth, onLogout
+  currentUser, onOpenAuth, onLogout
 }) => {
   return (
     <div className="w-64 bg-slate-900 text-white flex flex-col h-full shadow-2xl relative z-50">
@@ -111,32 +106,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Footer / Settings */}
       <div className="p-4 bg-slate-950/30 border-t border-slate-800 space-y-1">
-        {/* 下载管理 */}
-        <button
-          onClick={() => setActiveTab(TaskType.DOWNLOAD_MANAGER)}
-          className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-all duration-200 group ${activeTab === TaskType.DOWNLOAD_MANAGER
-              ? 'bg-blue-600 text-white shadow-md shadow-blue-900/20'
-              : 'text-slate-400 hover:text-white hover:bg-slate-800'
-            }`}
-        >
-          <Download size={18} className={activeTab === TaskType.DOWNLOAD_MANAGER ? 'text-white' : 'text-slate-500 group-hover:text-slate-300'} />
-          <span className="font-medium flex-1 text-left">下载管理</span>
-
-          {/* 右侧显示：速度 > 任务数 > 激活点 */}
-          {isDownloading && downloadStats.downloadSpeed > 0 ? (
-            <span className="text-xs text-emerald-400 font-medium whitespace-nowrap">
-              {formatSpeedSimple(downloadStats.downloadSpeed)}
-            </span>
-          ) : downloadStats.activeCount > 0 ? (
-            <span className="px-2 py-0.5 bg-white/20 text-white rounded-full text-xs font-medium">
-              {downloadStats.activeCount}
-            </span>
-          ) : activeTab === TaskType.DOWNLOAD_MANAGER ? (
-            <div className="w-1.5 h-1.5 bg-white rounded-full opacity-50"></div>
-          ) : null}
-        </button>
-
-        <div className="h-px bg-slate-800 my-2"></div>
 
         {/* 运行日志 */}
         <button

@@ -80,10 +80,10 @@ async def save_douyin_hot(output_dir: str = "output") -> Dict:
 async def refresh_douyin_hot_to_db() -> Dict[str, Any]:
     """
     刷新抖音热榜数据并保存到数据库
-    
+
     获取最新的抖音热榜数据，提取视频 ID，并保存到数据库的热搜表中。
     同时会保存每个热榜话题对应的第一个视频信息到 videos 表。
-    
+
     返回：
     - success: 是否成功
     - count: 保存的热榜数据条数
@@ -110,7 +110,7 @@ async def refresh_douyin_hot_to_db() -> Dict[str, Any]:
         
         # 尝试获取每个热榜话题的视频 ID 并保存视频信息
         videos_saved = 0
-        for video in hot_videos[:10]:  # 只处理前 10 个，避免耗时太长
+        for video in hot_videos:  # 处理所有热榜项目
             try:
                 if video.get('url'):
                     aweme_id = fetcher.get_video_from_hot_url(video['url'], video['title'])
@@ -124,11 +124,31 @@ async def refresh_douyin_hot_to_db() -> Dict[str, Any]:
                         }
                         fetcher.save_video_info_to_db(video_info)
                         videos_saved += 1
+                        
+                        try:
+                            # 更新 hot_search 表中的 aweme_id 字段
+                            logger.info(f"开始更新热榜数据的 aweme_id: {video['title']} -> {aweme_id}")
+                            from backend.lib.database import db_manager
+                            with db_manager.get_cursor() as cursor:
+                                # 找到最新的爬取时间
+                                cursor.execute("SELECT MAX(crawl_time) as latest_time FROM hot_search")
+                                latest_time_result = cursor.fetchone()
+                                if latest_time_result and latest_time_result['latest_time']:
+                                    logger.info(f"找到最新爬取时间: {latest_time_result['latest_time']}")
+                                    # 更新对应标题的 aweme_id
+                                    cursor.execute("""
+                                        UPDATE hot_search 
+                                        SET aweme_id = %s 
+                                        WHERE title = %s AND crawl_time = %s
+                                    """, (aweme_id, video['title'], latest_time_result['latest_time']))
+                                    affected_rows = cursor.rowcount
+                                    logger.info(f"已更新热榜数据的 aweme_id: {video['title']} -> {aweme_id}, 影响行数: {affected_rows}")
+                                else:
+                                    logger.warning(f"未找到最新爬取时间")
+                        except Exception as e:
+                            logger.error(f"更新热榜数据的 aweme_id 失败: {e}")
             except Exception as e:
-                logger.warning(f"保存视频信息失败 {video.get('title')}: {e}")
-                continue
-        
-        logger.info(f"热榜数据已刷新到数据库：{len(hot_videos)} 条热榜，{videos_saved} 个视频")
+                logger.error(f"处理热榜视频 {video.get('title', '未知')} 失败: {e}")
         
         return {
             "success": True,
@@ -136,12 +156,9 @@ async def refresh_douyin_hot_to_db() -> Dict[str, Any]:
             "videos_count": videos_saved,
             "message": f"已刷新 {len(hot_videos)} 条热榜数据，{videos_saved} 个视频信息"
         }
-        
-    except HTTPException:
-        raise
     except Exception as e:
-        logger.error(f"刷新热榜到数据库失败：{e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"刷新热榜失败：{str(e)}")
+        logger.error(f"刷新热榜到数据库失败: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"刷新热榜到数据库失败: {str(e)}")
 
 
 @router.get("/douyin/from-db", summary="从数据库获取抖音热榜")
@@ -185,7 +202,7 @@ async def get_douyin_hot_from_db(limit: int = 30) -> Dict[str, Any]:
             
             # 获取该时间点的所有热榜数据
             cursor.execute("""
-                SELECT id, `rank`, title, hot_value, video_id, cover_url, crawl_time
+                SELECT id, `rank`, title, hot_value, video_id, aweme_id, cover_url, crawl_time
                 FROM hot_search
                 WHERE crawl_time = %s
                 ORDER BY `rank`
@@ -204,6 +221,7 @@ async def get_douyin_hot_from_db(limit: int = 30) -> Dict[str, Any]:
                     "url": f"https://www.douyin.com/hot/{row['rank']}",  # 临时 URL
                     "mobileUrl": f"https://www.douyin.com/hot/{row['rank']}",
                     "video_id": row['video_id'],
+                    "aweme_id": row['aweme_id'],  # 添加真正的视频ID
                     "cover_url": row['cover_url'],  # 添加封面图 URL
                     "crawl_time": row['crawl_time'].isoformat() if row['crawl_time'] else None,
                 })

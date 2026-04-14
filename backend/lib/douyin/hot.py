@@ -101,8 +101,8 @@ class DouyinHotFetcher:
         # 获取 cookie
         try:
             cookie_response = requests.get("https://login.douyin.com/", timeout=10)
-            cookies = cookie_response.headers.getSetCookie()
-            cookie_str = "; ".join(cookies)
+            # 使用正确的方法获取cookie
+            cookie_str = cookie_response.headers.get('Set-Cookie', '')
         except Exception as e:
             print(f"获取抖音 cookie 失败：{e}")
             cookie_str = ""

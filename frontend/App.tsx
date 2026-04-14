@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AuthModal } from './components/AuthModal';
 import { DetailModal } from './components/DetailModal';
-import { DownloadPanel } from './components/DownloadPanel';
 import { ErrorBoundary, LightErrorBoundary } from './components/ErrorBoundary';
 import { HotCommentAnalyzer } from './components/HotCommentAnalyzer';
 import { HotCommentDashboard } from './components/HotCommentDashboard';
@@ -12,7 +11,6 @@ import { Sidebar } from './components/Sidebar';
 import { ToastContainer, toast } from './components/Toast';
 import { WelcomeWizard } from './components/WelcomeWizard';
 import { WorkCard } from './components/WorkCard';
-import { useAria2Download } from './hooks/useAria2Download';
 import { bridge } from './services/bridge';
 import { sseClient, TaskResultEvent, TaskStatusEvent, TaskErrorEvent } from './services/sseClient';
 import { logger } from './services/logger';
@@ -145,7 +143,6 @@ export const App: React.FC = () => {
   const [resultsTaskType, setResultsTaskType] = useState<TaskType | null>(null);  // 记录结果对应的任务类型
   const [savedInputVal, setSavedInputVal] = useState('');  // 保存采集时的输入框内容
   const [currentTaskId, setCurrentTaskId] = useState<string | null>(null);  // 保存当前采集任务的 ID
-  const [currentAria2Config, setCurrentAria2Config] = useState<string | null>(null);  // 保存当前任务的 aria2 配置文件路径
 
   // --- 热榜相关状态 ---
   const [autoCrawlVideoId, setAutoCrawlVideoId] = useState<string | null>(null);
@@ -163,18 +160,7 @@ export const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
 
-  // --- 下载管理 ---
-  // 使用 Aria2 下载 Hook，前端直接管理下载任务
-  const {
-    connected: aria2Connected,      // Aria2 是否已连接
-    downloading: isDownloading,     // 是否正在下载
-    progress: downloadProgress,     // 下载进度映射表
-    downloadStats,                  // 下载统计信息
-    addDownload,                    // 添加单个下载任务
-    batchDownloadFromConfig,        // 从配置文件批量下载
-    startPolling,                   // 开始轮询下载进度
-    cancelAll                       // 取消所有下载
-  } = useAria2Download();
+
 
   /**
    * 计算当前选中作品在结果列表中的索引
@@ -287,18 +273,7 @@ export const App: React.FC = () => {
         // 任务完成或出错时，停止加载状态
         setIsLoading(false);
         console.log('[DEBUG] 任务状态更新为:', event.status, '停止加载');
-        // 保存 aria2 配置文件路径
-        if (event.detected_type !== 'following' && event.detected_type !== 'follower') {
-          // 只有作品相关任务才有 aria2 配置
-          bridge.getAria2ConfigPath(currentTaskId || undefined).then(configPath => {
-            if (configPath) {
-              setCurrentAria2Config(configPath);
-              console.log('[DEBUG] 保存 aria2 配置文件路径:', configPath);
-            }
-          }).catch(err => {
-            console.warn('[DEBUG] 获取 aria2 配置路径失败:', err);
-          });
-        }
+
       }
     }
   }, [currentTaskId]);
@@ -384,15 +359,7 @@ export const App: React.FC = () => {
     };
   }, []); // 空依赖数组，只执行一次
 
-  /**
-   * 监听下载完成事件，完成后自动停止轮询
-   */
-  useEffect(() => {
-    if (!isDownloading) {
-      // 下载完成后停止轮询
-      // downloadProgress 会在下载完成后自动清空
-    }
-  }, [isDownloading]);
+
 
   /**
    * 开始采集任务
@@ -443,30 +410,7 @@ export const App: React.FC = () => {
     setSelectedWorkId(work.id);
   }, []);
 
-  /**
-   * 批量下载当前结果
-   */
-  const handleBatchDownload = useCallback(async () => {
-    if (results.length === 0) {
-      toast.info('暂无可下载的作品');
-      return;
-    }
 
-    if (!currentAria2Config) {
-      toast.error('没有找到下载配置文件，请先完成采集');
-      return;
-    }
-
-    try {
-      await batchDownloadFromConfig(currentAria2Config);
-
-      toast.success(`已添加 ${results.length} 个作品到下载队列`);
-      logger.info(`批量下载已启动：${results.length} 个作品`);
-    } catch (error: any) {
-      toast.error(`批量下载失败：${error.message}`);
-      logger.error(`批量下载失败：${error.message}`);
-    }
-  }, [results, currentAria2Config, batchDownloadFromConfig]);
 
   /**
    * 根据当前任务类型返回输入框的占位符文本
@@ -531,8 +475,6 @@ export const App: React.FC = () => {
                 onOpenSettings={() => setIsSettingsOpen(true)}
                 showLogs={showLogs}
                 setShowLogs={setShowLogs}
-                isDownloading={isDownloading}
-                downloadStats={downloadStats}
                 currentUser={currentUser}
                 onOpenAuth={() => setIsAuthModalOpen(true)}
                 onLogout={handleLogout}
@@ -540,11 +482,7 @@ export const App: React.FC = () => {
             </LightErrorBoundary>
 
             {/* 根据 activeTab 显示不同的主内容区域 */}
-            {activeTab === TaskType.DOWNLOAD_MANAGER ? (
-              <LightErrorBoundary fallbackMessage="下载面板加载失败">
-                <DownloadPanel isOpen={true} showLogs={showLogs} />
-              </LightErrorBoundary>
-            ) : activeTab === TaskType.HOT_SEARCH ? (
+            {activeTab === TaskType.HOT_SEARCH ? (
               <LightErrorBoundary fallbackMessage="热榜页面加载失败">
                 <HotSearchDashboard setActiveTab={handleTabChange} onAnalyzeHotItem={handleAnalyzeHotItem} />
               </LightErrorBoundary>
@@ -561,7 +499,7 @@ export const App: React.FC = () => {
                 {/* Sticky Header */}
                 <div className="sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-gray-200/60 shadow-sm transition-all">
                   <div className="max-w-7xl mx-auto w-full px-8 py-5">
-                    {(activeTab as TaskType) !== TaskType.DOWNLOAD_MANAGER && (
+                    {true && (
                       <>
                         <h2 className="text-xl font-bold text-gray-800 mb-4 flex items-center gap-2 tracking-tight">
                           数据采集
@@ -741,16 +679,13 @@ export const App: React.FC = () => {
 
                 <LightErrorBoundary fallbackMessage="详情弹窗加载失败">
                   <DetailModal
-                    work={selectedWork}
-                    onClose={() => setSelectedWorkId(null)}
-                    onPrev={() => navigateWork('prev')}
-                    onNext={() => navigateWork('next')}
-                    hasPrev={selectedWorkIndex > 0}
-                    hasNext={selectedWorkIndex < results.length - 1}
-                    addDownload={addDownload}
-                    startPolling={startPolling}
-                    progress={downloadProgress}
-                  />
+                  work={selectedWork}
+                  onClose={() => setSelectedWorkId(null)}
+                  onPrev={() => navigateWork('prev')}
+                  onNext={() => navigateWork('next')}
+                  hasPrev={selectedWorkIndex > 0}
+                  hasNext={selectedWorkIndex < results.length - 1}
+                />
                 </LightErrorBoundary>
               </main>
             )}

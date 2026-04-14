@@ -76,7 +76,7 @@ class Douyin:
         self.title = ""
         self.info = {}
         self.render_data = {}
-        self.aria2_conf = ""
+
 
     def run(self):
         """运行爬虫"""
@@ -128,7 +128,7 @@ class Douyin:
         logger.debug(f"目标信息更新: type={self.type}, id={self.id}")
 
         # 获取详细信息
-        self.title, self.down_path, self.aria2_conf, self.info, self.render_data = (
+        self.title, self.down_path, _, self.info, self.render_data = (
             handler.fetch_target_info()
         )
 
@@ -249,47 +249,6 @@ class Douyin:
         save_json(self.down_path, self.results)
 
         # 保存aria2下载配置
-        self._save_aria2_config()
 
-    def _save_aria2_config(self):
-        """保存aria2下载配置文件"""
-        lines = []
 
-        # 保存主页链接
-        if self.type in ["following", "follower"]:
-            lines = [
-                f"{DouyinURL.USER}/{line.get(FieldName.SEC_UID, 'None')}\n"
-                for line in self.results
-                if line.get(FieldName.SEC_UID)
-            ]
-        # 保存作品下载配置
-        else:
-            for line in self.results:
-                desc = line.get("desc") or "无标题"
-                filename = f'{line["id"]}_{desc}'
 
-                if self.type == "mix":
-                    filename = f"第{line['no']}集_{filename}"
-
-                # 图文作品
-                if isinstance(line["download_addr"], list):
-                    if self.type == "aweme":
-                        down_path = self.down_path.replace(line["id"], filename)
-                    else:
-                        down_path = os.path.join(self.down_path, filename)
-
-                    for index, addr in enumerate(line["download_addr"]):
-                        lines.append(
-                            f'{addr}\n dir={down_path}\n out={line["id"]}_{index + 1}.jpeg\n'
-                        )
-                # 视频作品
-                elif isinstance(line["download_addr"], str):
-                    lines.append(
-                        f'{line["download_addr"]}\n dir={self.down_path}\n out={filename}.mp4\n'
-                    )
-                else:
-                    logger.error("下载地址错误")
-
-        if lines:
-            with open(self.aria2_conf, "w", encoding="utf-8") as f:
-                f.writelines(lines)

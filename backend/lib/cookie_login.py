@@ -60,12 +60,45 @@ def get_cookie_by_selenium(headless: bool = False) -> CookieLoginResult:
         options.add_argument("--disable-dev-shm-usage")
         options.add_experimental_option("excludeSwitches", ["enable-automation"])
         options.add_experimental_option("useAutomationExtension", False)
+        
+        # 添加自定义用户数据目录，避免临时目录权限问题
+        user_data_dir = os.path.join(os.getcwd(), "chrome_user_data")
+        options.add_argument(f"--user-data-dir={user_data_dir}")
+        options.add_argument(f"--profile-directory=Default")
 
-        if use_webdriver_manager:
-            service = Service(ChromeDriverManager().install())
-            driver = webdriver.Chrome(service=service, options=options)
-        else:
-            driver = webdriver.Chrome(options=options)
+        driver = None
+        try:
+            if use_webdriver_manager:
+                service = Service(ChromeDriverManager().install())
+                driver = webdriver.Chrome(service=service, options=options)
+            else:
+                driver = webdriver.Chrome(options=options)
+        except Exception as e:
+            logger.warning(f"ChromeDriver 初始化失败: {e}，尝试使用系统路径...")
+            
+            # 常见的 chromedriver 路径
+            chromedriver_paths = [
+                "D:\\chromedriver\\chromedriver.exe",
+                os.path.join(os.getcwd(), "chromedriver.exe"),
+                os.path.join(os.path.dirname(sys.executable), "chromedriver.exe"),
+                "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chromedriver.exe",
+                "C:\\Program Files\\Google\\Chrome\\Application\\chromedriver.exe",
+            ]
+            
+            for path in chromedriver_paths:
+                if os.path.exists(path):
+                    try:
+                        service = Service(path)
+                        driver = webdriver.Chrome(service=service, options=options)
+                        logger.info(f"成功使用 ChromeDriver: {path}")
+                        break
+                    except Exception as e:
+                        logger.debug(f"尝试路径 {path} 失败: {e}")
+                        continue
+            
+            if not driver:
+                logger.error("无法找到可用的 ChromeDriver")
+                return get_cookie_manual()
 
         driver.execute_cdp_cmd(
             "Page.addScriptToEvaluateOnNewDocument",
@@ -81,14 +114,37 @@ def get_cookie_by_selenium(headless: bool = False) -> CookieLoginResult:
         driver.get("https://www.douyin.com")
         logger.info("浏览器已打开抖音首页")
         logger.info("请在浏览器中完成登录（扫码或账号密码）")
-        logger.info("登录完成后，此窗口将自动继续...")
+        logger.info("登录完成后，系统将自动检测...")
 
-        print("\n" + "=" * 50)
-        print("请在浏览器中登录抖音")
-        print("登录完成后按 Enter 键继续...")
-        print("=" * 50 + "\n")
-
-        input()
+        # 等待登录完成
+        max_wait_time = 300  # 5分钟
+        start_time = time.time()
+        
+        while time.time() - start_time < max_wait_time:
+            try:
+                # 检查是否有登录后的特征（比如用户头像、个人中心等）
+                # 这里通过检查 cookie 中是否有 sessionid 或其他登录标识来判断
+                cookies = driver.get_cookies()
+                login_cookies = [c for c in cookies if c['name'] in ['sessionid', 'odin_tt', 'passport_csrf_token']]
+                
+                if login_cookies:
+                    logger.info("检测到登录状态，正在提取 Cookie...")
+                    break
+                
+                time.sleep(3)  # 每3秒检查一次
+            except Exception as e:
+                logger.debug(f"检查登录状态时出错: {e}")
+                time.sleep(3)
+        
+        # 超时处理
+        if time.time() - start_time >= max_wait_time:
+            driver.quit()
+            return CookieLoginResult(
+                success=False,
+                cookie="",
+                user_agent="",
+                error="登录超时，请检查网络连接或手动获取 Cookie",
+            )
 
         cookies = driver.get_cookies()
         user_agent = driver.execute_script("return navigator.userAgent")
@@ -132,12 +188,9 @@ def get_cookie_by_selenium(headless: bool = False) -> CookieLoginResult:
     except Exception as e:
         error_msg = f"获取 Cookie 失败: {str(e)}"
         logger.error(error_msg)
-        return CookieLoginResult(
-            success=False,
-            cookie="",
-            user_agent="",
-            error=error_msg,
-        )
+        # 出错时回退到手动登录
+        logger.warning("Selenium 登录失败，回退到手动登录")
+        return get_cookie_manual()
 
 
 def get_cookie_by_login() -> CookieLoginResult:
@@ -147,7 +200,11 @@ def get_cookie_by_login() -> CookieLoginResult:
     Returns:
         CookieLoginResult: 登录结果对象
     """
-    return get_cookie_by_selenium(headless=False)
+    try:
+        return get_cookie_by_selenium(headless=False)
+    except Exception as e:
+        logger.warning(f"Selenium 登录失败，回退到手动登录: {e}")
+        return get_cookie_manual()
 
 
 def get_cookie_manual() -> CookieLoginResult:

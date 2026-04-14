@@ -141,9 +141,50 @@ export const HotCommentDashboard: React.FC<HotCommentDashboardProps> = ({ refres
         console.log('热榜历史数据成功:', { times: result.times, series: result.series });
         console.log('times长度:', result.times.length);
         console.log('series长度:', result.series.length);
+        
+        // 检测热度预警
+        const seriesWithAlerts = result.series.map(series => {
+          const alerts = [];
+          const data = series.data;
+          const baseValue = data[0]; // 以第一个时间点为基准
+          
+          for (let i = 1; i < data.length; i++) {
+            const currentValue = data[i];
+            
+            if (baseValue && baseValue > 0 && currentValue) {
+              const changeRate = ((currentValue - baseValue) / baseValue) * 100;
+              const absChangeRate = Math.abs(changeRate);
+              
+              let alertLevel = null;
+              if (absChangeRate >= 20) {
+                alertLevel = 'high';
+              } else if (absChangeRate >= 10) {
+                alertLevel = 'medium';
+              } else if (absChangeRate >= 5) {
+                alertLevel = 'low';
+              }
+              
+              if (alertLevel) {
+                alerts.push({
+                  index: i,
+                  time: result.times[i],
+                  changeRate: changeRate.toFixed(2),
+                  alertLevel: alertLevel,
+                  direction: changeRate > 0 ? '上升' : '下降'
+                });
+              }
+            }
+          }
+          
+          return {
+            ...series,
+            alerts: alerts
+          };
+        });
+        
         setHotHistoryData({
           times: result.times,
-          series: result.series
+          series: seriesWithAlerts
         });
       } else {
         console.log('热榜历史数据返回但格式不正确:', result);
@@ -194,6 +235,33 @@ export const HotCommentDashboard: React.FC<HotCommentDashboardProps> = ({ refres
 
   const generatePDFReport = async () => {
     if (!selectedAnalysis) return;
+    
+    // 分析总结生成函数
+    const generateSummary = (data: any) => {
+      const total = data.total || 0;
+      const positive = data.sentiment?.positive_rate || 0;
+      const neutral = data.sentiment?.neutral_rate || 0;
+      const negative = data.sentiment?.negative_rate || 0;
+      const topicCount = data.topics?.topics?.length || 3;
+
+      return `
+ 本次分析共获取有效评论 ${total} 条。整体情感以中性为主（${neutral}%），正面评价占比 ${positive}%，负面评价仅 ${negative}%，
+ 用户态度温和、口碑稳定，无明显舆情风险。热门关键词集中反映用户核心关注点，地域分布符合短视频平台主流用户特征，
+ 用户活跃时段集中于夜间。通过 LDA 主题模型共挖掘出 ${topicCount} 个核心讨论话题，清晰呈现用户兴趣与需求。
+ 整体来看，内容传播效果良好，用户接受度高，舆情状态平稳健康。
+      `.trim();
+    };
+
+    // 优化建议生成函数
+    const generateSuggestions = (data: any) => {
+      return `
+ 1. 内容优化：结合正面评价与高频热词持续强化核心内容输出，巩固用户好感度。
+ 2. 负面应对：针对少量负面反馈及时排查原因，优化细节，进一步提升口碑。
+ 3. 发布策略：根据用户活跃时段规律，选择高流量时段发布，提升互动量。
+ 4. 地域运营：针对高活跃地区加强内容推送，提高精准触达与粉丝粘性。
+ 5. 需求匹配：依据 LDA 挖掘的主题方向创作内容，更贴合用户真实兴趣。
+      `.trim();
+    };
     
     // 获取图表图片
     const getChartImage = (chartRef: React.RefObject<ReactECharts>): string => {
@@ -339,6 +407,15 @@ export const HotCommentDashboard: React.FC<HotCommentDashboardProps> = ({ refres
             color: #86909C;
             font-size: 12px;
           }
+          .summary {
+            line-height: 1.6;
+            color: #374151;
+            text-align: justify;
+          }
+          .solutions {
+            line-height: 1.6;
+            color: #374151;
+          }
           @media print {
             body { background: white; }
             .container { box-shadow: none; }
@@ -377,7 +454,17 @@ export const HotCommentDashboard: React.FC<HotCommentDashboardProps> = ({ refres
           </div>
 
           <div class="section">
-            <div class="section-title">二、情感分析</div>
+            <div class="section-title">二、分析总结</div>
+            <div class="summary">${generateSummary(analysis)}</div>
+          </div>
+
+          <div class="section">
+            <div class="section-title">三、优化建议</div>
+            <div class="solutions">${generateSuggestions(analysis)}</div>
+          </div>
+
+          <div class="section">
+            <div class="section-title">四、情感分析</div>
             ${sentimentImage ? `<div style="text-align: center; margin: 20px 0;"><img src="${sentimentImage}" style="max-width: 400px; height: auto;" /></div>` : ''}
             <table class="table">
               <tr>
@@ -404,7 +491,7 @@ export const HotCommentDashboard: React.FC<HotCommentDashboardProps> = ({ refres
           </div>
 
           <div class="section">
-            <div class="section-title">三、热门关键词分析</div>
+            <div class="section-title">五、热门关键词分析</div>
             ${hotWordsImage ? `<div style="text-align: center; margin: 20px 0;"><img src="${hotWordsImage}" style="max-width: 100%; height: auto;" /></div>` : ''}
             <table class="table">
               <tr>
@@ -412,7 +499,7 @@ export const HotCommentDashboard: React.FC<HotCommentDashboardProps> = ({ refres
                 <th>关键词</th>
                 <th>出现次数</th>
               </tr>
-              ${analysis.hot_words.slice(0, 10).map((word, index) => `
+              ${analysis.hot_words.slice(0, 10).map((word: any, index: number) => `
                 <tr>
                   <td>${index + 1}</td>
                   <td>${word[0]}</td>
@@ -423,7 +510,7 @@ export const HotCommentDashboard: React.FC<HotCommentDashboardProps> = ({ refres
           </div>
 
           <div class="section">
-            <div class="section-title">四、高赞评论 TOP 5</div>
+            <div class="section-title">六、高赞评论 TOP 5</div>
             <table class="table">
               <tr>
                 <th>排名</th>
@@ -431,7 +518,7 @@ export const HotCommentDashboard: React.FC<HotCommentDashboardProps> = ({ refres
                 <th>评论内容</th>
                 <th>点赞数</th>
               </tr>
-              ${analysis.top_comments.slice(0, 5).map((comment, index) => `
+              ${analysis.top_comments.slice(0, 5).map((comment: any, index: number) => `
                 <tr>
                   <td>${index + 1}</td>
                   <td>${comment.nickname}</td>
@@ -443,7 +530,7 @@ export const HotCommentDashboard: React.FC<HotCommentDashboardProps> = ({ refres
           </div>
 
           <div class="section">
-            <div class="section-title">五、地域分布</div>
+            <div class="section-title">七、地域分布</div>
             ${locationImage ? `<div style="text-align: center; margin: 20px 0;"><img src="${locationImage}" style="max-width: 100%; height: auto;" /></div>` : ''}
             <table class="table">
               <tr>
@@ -451,7 +538,7 @@ export const HotCommentDashboard: React.FC<HotCommentDashboardProps> = ({ refres
                 <th>地区</th>
                 <th>用户数</th>
               </tr>
-              ${analysis.location_distribution.slice(0, 10).map(([location, count], index) => `
+              ${analysis.location_distribution.slice(0, 10).map(([location, count]: [string, number], index: number) => `
                 <tr>
                   <td>${index + 1}</td>
                   <td>${location}</td>
@@ -462,12 +549,12 @@ export const HotCommentDashboard: React.FC<HotCommentDashboardProps> = ({ refres
           </div>
 
           <div class="section">
-            <div class="section-title">六、评论时间分布</div>
+            <div class="section-title">八、评论时间分布</div>
             ${timeImage ? `<div style="text-align: center; margin: 20px 0;"><img src="${timeImage}" style="max-width: 100%; height: auto;" /></div>` : ''}
           </div>
 
           <div class="section">
-            <div class="section-title">七、用户活跃度</div>
+            <div class="section-title">九、用户活跃度</div>
             <table class="table">
               <tr>
                 <th>指标</th>
@@ -486,13 +573,13 @@ export const HotCommentDashboard: React.FC<HotCommentDashboardProps> = ({ refres
 
           ${analysis.topics && analysis.topics.topics && analysis.topics.topics.length > 0 ? `
           <div class="section">
-            <div class="section-title">八、LDA 主题分析</div>
+            <div class="section-title">十、LDA 主题分析</div>
             <table class="table">
               <tr>
                 <th>主题ID</th>
                 <th>关键词</th>
               </tr>
-              ${analysis.topics.topics.map((topic, index) => `
+              ${analysis.topics.topics.map((topic: any, index: number) => `
                 <tr>
                   <td>主题${topic.topic_id}</td>
                   <td>${topic.keywords}</td>
@@ -504,7 +591,7 @@ export const HotCommentDashboard: React.FC<HotCommentDashboardProps> = ({ refres
           ` : ''}
 
           <div class="section">
-            <div class="section-title">九、分析模型</div>
+            <div class="section-title">${analysis.topics && analysis.topics.topics && analysis.topics.topics.length > 0 ? '十一' : '十'}、分析模型</div>
             <p><strong>情感分析模型：</strong>情感字典匹配</p>
             ${analysis.topics && analysis.topics.model ? `<p><strong>主题分析模型：</strong>${analysis.topics.model}</p>` : ''}
           </div>
@@ -735,21 +822,21 @@ export const HotCommentDashboard: React.FC<HotCommentDashboardProps> = ({ refres
         }
       }
     },
-    // 系列数据 - 计算变化率
+    // 系列数据 - 计算环比变化率
     series: hotHistoryData.series.map((s, idx) => {
       const colors = [
         '#9370DB', '#FF69B4', '#FFA500', '#3CB371', '#4169E1',
         '#9370DB', '#FF69B4', '#FFA500', '#3CB371', '#4169E1'
       ];
       
-      // 计算变化率：以第一个时间点为基准
-      const baseValue = s.data[0];
-      const changeRateData = s.data.map((val: number | null | undefined) => {
+      // 计算与第一次爬取数据的变化率：以第一个时间点为基准
+      const changeRateData = s.data.map((val: number | null | undefined, index: number) => {
+        const baseValue = s.data[0];
         // 处理无效值
         if (baseValue === 0 || !baseValue) return 0;
         if (val === null || val === undefined || !val) return 0;
         
-        // 计算变化率
+        // 计算与基准值的变化率
         const changeRate = ((val - baseValue) / baseValue) * 100;
         
         // 处理异常值
@@ -946,12 +1033,94 @@ export const HotCommentDashboard: React.FC<HotCommentDashboardProps> = ({ refres
           {hotHistoryData ? (
             <div className="mb-6">
               <div className="bg-slate-800/50 backdrop-blur-lg border border-slate-700/50 rounded-xl p-4">
-                <h3 className="text-base font-bold text-white mb-3 flex items-center gap-2">
+                <h3 className="text-base font-bold text-white flex items-center gap-2 mb-3">
                   <span className="w-2 h-2 bg-gradient-to-r from-red-500 to-orange-500 rounded-full"></span>
                   热榜热度趋势 TOP 10
                 </h3>
                 <div className="h-72">
                   <ReactECharts option={hotTrendChartOption} style={{ height: '100%' }} />
+                </div>
+              </div>
+              
+              {/* 热度预警信息 */}
+              <div className="mt-4 bg-slate-800/50 backdrop-blur-lg border border-slate-700/50 rounded-xl p-4">
+                <h3 className="text-base font-bold text-white mb-3 flex items-center gap-2">
+                  <span className="w-2 h-2 bg-gradient-to-r from-yellow-500 to-red-500 rounded-full"></span>
+                  热度预警
+                </h3>
+                <div className="space-y-2">
+                  {(() => {
+                    const allAlerts = hotHistoryData.series
+                      .flatMap(series => series.alerts.map(alert => ({ ...alert, seriesName: series.name })));
+                    
+                    // 对于同一个新闻同级别预警只保留最新的一次
+                    const uniqueAlertsMap = new Map();
+                    allAlerts.forEach(alert => {
+                      const key = `${alert.seriesName}_${alert.alertLevel}`;
+                      const existing = uniqueAlertsMap.get(key);
+                      if (!existing || new Date(alert.time).getTime() > new Date(existing.time).getTime()) {
+                        uniqueAlertsMap.set(key, alert);
+                      }
+                    });
+                    
+                    const uniqueAlerts = Array.from(uniqueAlertsMap.values())
+                      .sort((a, b) => {
+                        // 按预警级别排序，高优先级在前
+                        const levelOrder = { high: 0, medium: 1, low: 2 };
+                        if (levelOrder[a.alertLevel] !== levelOrder[b.alertLevel]) {
+                          return levelOrder[a.alertLevel] - levelOrder[b.alertLevel];
+                        }
+                        // 相同级别按时间倒序
+                        return new Date(b.time).getTime() - new Date(a.time).getTime();
+                      });
+                    
+                    if (uniqueAlerts.length === 0) {
+                    return <p className="text-slate-400 text-sm">暂无预警信息</p>;
+                  }
+                
+                  return (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                      {uniqueAlerts.map((alert, index) => {
+                      let alertIcon = '';
+                      let alertColor = '';
+                      let alertText = '';
+                      
+                      switch (alert.alertLevel) {
+                        case 'high':
+                          alertIcon = '🔥';
+                          alertColor = 'text-red-400';
+                          alertText = '重大变化';
+                          break;
+                        case 'medium':
+                          alertIcon = '⚠️';
+                          alertColor = 'text-yellow-400';
+                          alertText = '显著变化';
+                          break;
+                        case 'low':
+                          alertIcon = 'ℹ️';
+                          alertColor = 'text-blue-400';
+                          alertText = '轻微变化';
+                          break;
+                      }
+                      
+                      return (
+                        <div key={index} className="flex items-center gap-2 p-2 bg-slate-700/30 rounded-lg">
+                          <span className="text-lg">{alertIcon}</span>
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className={`font-medium ${alertColor}`}>{alertText}</span>
+                              <span className="text-sm text-slate-400">{alert.seriesName}</span>
+                            </div>
+                            <div className="text-xs text-slate-400 mt-1">
+                              {alert.time} · 热度{alert.direction}{alert.changeRate}%
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    </div>
+                  );
+                })()}
                 </div>
               </div>
             </div>

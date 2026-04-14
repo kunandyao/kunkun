@@ -32,10 +32,7 @@ export const WelcomeWizard: React.FC<WelcomeWizardProps> = ({ isOpen, onClose, o
     downloadPath: APP_DEFAULTS.DOWNLOAD_PATH,
     maxRetries: APP_DEFAULTS.MAX_RETRIES,
     maxConcurrency: APP_DEFAULTS.MAX_CONCURRENCY,
-    enableIncrementalFetch: APP_DEFAULTS.ENABLE_INCREMENTAL_FETCH,
-    aria2Host: APP_DEFAULTS.ARIA2_HOST,
-    aria2Port: APP_DEFAULTS.ARIA2_PORT,
-    aria2Secret: APP_DEFAULTS.ARIA2_SECRET
+    enableIncrementalFetch: APP_DEFAULTS.ENABLE_INCREMENTAL_FETCH
   });
   const [isSaving, setIsSaving] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
@@ -194,8 +191,8 @@ export const WelcomeWizard: React.FC<WelcomeWizardProps> = ({ isOpen, onClose, o
                       <Check className="text-white" size={12} />
                     </div>
                     <div>
-                      <p className="font-medium text-gray-900 text-sm">批量下载</p>
-                      <p className="text-xs text-gray-600">使用Aria2实现高速多线程下载</p>
+                      <p className="font-medium text-gray-900 text-sm">数据采集</p>
+                      <p className="text-xs text-gray-600">支持多种采集模式和数据源</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-2">

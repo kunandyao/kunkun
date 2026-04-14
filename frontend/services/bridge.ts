@@ -41,13 +41,10 @@ export interface Bridge {
   selectFolder: () => Promise<string>;
   subscribeToLogs: (callback: (log: any) => void) => Promise<() => void>;
   getTaskStatus: (taskId?: string) => Promise<any[]>;
-  getAria2Config: () => Promise<{ host: string; port: number; secret: string }>;
   isFirstRun: () => Promise<boolean>;
-  startAria2: () => Promise<void>;
   getTaskResults: (taskId: string) => Promise<any[]>;
   getClipboardText: () => Promise<string>;
   readConfigFile: (filePath: string) => Promise<string>;
-  getAria2ConfigPath: (taskId?: string) => Promise<string>;
   checkFileExists: (filePath: string) => Promise<boolean>;
   openFolder: (folderPath: string) => Promise<boolean>;
   cookieLogin: () => Promise<{ success: boolean; cookie: string; user_agent: string; error: string }>;
@@ -142,28 +139,10 @@ export const bridge: Bridge = {
     }
   },
 
-  getAria2Config: async () => {
-    try {
-      return await api.aria2.config();
-    } catch (error) {
-      handleError(error, {}, { customMessage: 'get aria2 config failed' });
-      throw error;
-    }
-  },
-
   isFirstRun: async () => {
     try {
       return await api.settings.isFirstRun();
     } catch { return false; }
-  },
-
-  startAria2: async () => {
-    try {
-      await api.aria2.start();
-    } catch (error) {
-      handleError(error, {}, { customMessage: 'start aria2 failed' });
-      throw error;
-    }
   },
 
   getTaskResults: async (taskId) => {
@@ -189,15 +168,6 @@ export const bridge: Bridge = {
       return await api.file.readConfig(filePath);
     } catch (error) {
       handleError(error, { filePath }, { customMessage: 'read config failed' });
-      throw error;
-    }
-  },
-
-  getAria2ConfigPath: async (taskId) => {
-    try {
-      return await api.aria2.configPath(taskId);
-    } catch (error) {
-      handleError(error, { taskId }, { customMessage: 'get config path failed' });
       throw error;
     }
   },
