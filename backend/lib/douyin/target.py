@@ -48,7 +48,7 @@ def _extract_douyin_url(text: str) -> str | None:
 class TargetHandler:
     """目标处理器：负责目标识别和信息获取"""
 
-    def __init__(self, request: Request, target: str, type: str, down_path: str):
+    def __init__(self, request: Request, target: str, type: str):
         """
         初始化目标处理器
 
@@ -56,12 +56,10 @@ class TargetHandler:
             request: Request实例
             target: 目标URL或ID
             type: 目标类型
-            down_path: 下载路径
         """
         self.request = request
         self.target = target
         self.type = type
-        self.down_path = down_path
         self.id = ""
         self.url = ""
         self.title = ""
@@ -166,12 +164,12 @@ class TargetHandler:
         else:
             quit(f"获取UID请求失败, url: {url}")
 
-    def fetch_target_info(self) -> tuple[str, str]:
+    def fetch_target_info(self) -> tuple[str, dict, dict]:
         """
         获取目标信息
 
         Returns:
-            tuple: (title, aria2_conf_path)
+            tuple: (title, info, render_data)
         """
         # 目标信息（单条视频也走 HTML，避免 API 返回空 body 导致失败）
         if self.type == "search":
@@ -184,11 +182,7 @@ class TargetHandler:
         else:
             self._fetch_from_html()
 
-        # 构建下载路径
-        down_path = os.path.join(
-            self.down_path, sanitize_filename(f"{self.type}_{self.title}")
-        )
-        return self.title, down_path, None, self.info, self.render_data
+        return self.title, self.info, self.render_data
 
     def _fetch_from_html(self, optional: bool = False):
         """从HTML页面获取目标信息。optional=True 时失败不 quit，仅留空 render_data（供单条视频回退 API）。"""

@@ -28,24 +28,6 @@ class SettingsManager:
     VALIDATORS: Dict[str, Tuple[Callable[[Any], bool], str]] = {
         "cookie": (lambda x: isinstance(x, str), "必须是字符串"),
         "userAgent": (lambda x: isinstance(x, str), "必须是字符串"),
-        "downloadPath": (
-            lambda x: isinstance(x, str) and len(x) > 0,
-            "必须是非空字符串",
-        ),
-        "maxRetries": (
-            lambda x: isinstance(x, int) and 0 <= x <= 10,
-            "必须是0-10的整数",
-        ),
-        "maxConcurrency": (
-            lambda x: isinstance(x, int) and 1 <= x <= 10,
-            "必须是1-10的整数",
-        ),
-        "aria2Host": (lambda x: isinstance(x, str) and len(x) > 0, "必须是非空字符串"),
-        "aria2Port": (
-            lambda x: isinstance(x, int) and 1 <= x <= 65535,
-            "必须是1-65535的整数",
-        ),
-        "aria2Secret": (lambda x: isinstance(x, str), "必须是字符串"),
     }
 
     def __init__(self, auto_load: bool = True) -> None:

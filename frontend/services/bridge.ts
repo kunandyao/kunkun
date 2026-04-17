@@ -38,7 +38,6 @@ export interface Bridge {
   openExternal: (url: string) => void;
   getSettings: () => Promise<AppSettings>;
   saveSettings: (settings: AppSettings) => Promise<void>;
-  selectFolder: () => Promise<string>;
   subscribeToLogs: (callback: (log: any) => void) => Promise<() => void>;
   getTaskStatus: (taskId?: string) => Promise<any[]>;
   isFirstRun: () => Promise<boolean>;
@@ -116,16 +115,6 @@ export const bridge: Bridge = {
       handleError(error, settings, { customMessage: 'save settings failed' });
       throw error;
     }
-  },
-
-  selectFolder: async () => {
-    if (isGUIMode()) {
-      try {
-        const settings = await api.settings.get();
-        return settings.downloadPath || '';
-      } catch { return ''; }
-    }
-    return '';
   },
 
   subscribeToLogs: async (callback) => sseClient.onLog(callback),

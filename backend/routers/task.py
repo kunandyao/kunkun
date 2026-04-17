@@ -14,7 +14,6 @@ from fastapi import APIRouter, HTTPException
 from loguru import logger
 from pydantic import BaseModel
 
-from ..constants import DOWNLOAD_DIR
 from ..lib.cookies import CookieManager
 from ..settings import settings
 from ..sse import SSEEventType, sse
@@ -236,7 +235,6 @@ def _execute_task(
             target=target,
             limit=int(limit) if limit > 0 else 0,
             type=task_type,
-            down_path=settings.get("downloadPath", DOWNLOAD_DIR),
             cookie=cookie,
             user_agent=settings.get("userAgent", ""),
             filters=filters or {},

@@ -47,9 +47,6 @@ export interface DouyinWork {
 export interface AppSettings {
   cookie: string;
   userAgent: string;
-  downloadPath: string;
-  maxRetries: number;
-  maxConcurrency: number;
   enableIncrementalFetch: boolean;
 }
 

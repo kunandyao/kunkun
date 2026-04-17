@@ -11,7 +11,7 @@ from fastapi import APIRouter, HTTPException
 from loguru import logger
 from pydantic import BaseModel, Field
 
-from ..constants import DEFAULT_SETTINGS, DOWNLOAD_DEFAULTS
+from ..constants import DEFAULT_SETTINGS
 from ..settings import settings
 
 router = APIRouter(prefix="/api/settings", tags=["设置管理"])
@@ -27,9 +27,6 @@ class SettingsUpdate(BaseModel):
 
     cookie: Optional[str] = None
     userAgent: Optional[str] = None
-    downloadPath: Optional[str] = None
-    maxRetries: Optional[int] = Field(None, ge=0, le=10)
-    maxConcurrency: Optional[int] = Field(None, ge=1, le=10)
     windowWidth: Optional[int] = Field(None, ge=800, le=3840)
     windowHeight: Optional[int] = Field(None, ge=600, le=2160)
     enableIncrementalFetch: Optional[bool] = None
@@ -40,9 +37,6 @@ class SettingsResponse(BaseModel):
 
     cookie: str = ""
     userAgent: str = ""
-    downloadPath: str = ""
-    maxRetries: int = DOWNLOAD_DEFAULTS["MAX_RETRIES"]
-    maxConcurrency: int = DOWNLOAD_DEFAULTS["MAX_CONCURRENCY"]
     windowWidth: int = DEFAULT_SETTINGS["windowWidth"]
     windowHeight: int = DEFAULT_SETTINGS["windowHeight"]
     enableIncrementalFetch: bool = True

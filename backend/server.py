@@ -40,8 +40,42 @@ from .routers import (
     task_router,
 )
 from .routers.auth import router as auth_router
+from .routers.users import router as users_router
 from .sse import sse
 from .state import state
+
+# ============================================================================
+# 日志配置
+# ============================================================================
+
+import uuid
+from datetime import datetime
+
+def log_sink(message):
+    """日志sink，将日志发送到SSE"""
+    try:
+        record = message.record
+        log_id = str(uuid.uuid4())
+        timestamp = record["time"].strftime("%Y-%m-%d %H:%M:%S")
+        level = record["level"].name.lower()
+        message = record["message"]
+        
+        # 发送日志到SSE
+        sse.broadcast_sync("log", {
+            "id": log_id,
+            "timestamp": timestamp,
+            "level": level,
+            "message": message
+        })
+    except Exception:
+        pass
+
+# 配置loguru，添加SSE sink
+logger.add(
+    log_sink,
+    level="INFO",
+    format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} | {message}"
+)
 
 # ============================================================================
 # 响应模型
@@ -120,6 +154,7 @@ app.include_router(system_router)
 app.include_router(hot_router)
 app.include_router(hot_comment_router)
 app.include_router(auth_router)
+app.include_router(users_router)
 
 
 # ============================================================================

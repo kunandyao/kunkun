@@ -30,7 +30,6 @@ class Douyin:
         target: str = "",
         limit: int = 0,
         type: str = "post",
-        down_path: str = "下载",
         cookie: str = "",
         user_agent: str = "",
         filters: dict = None,
@@ -43,7 +42,6 @@ class Douyin:
             target: 目标URL或ID
             limit: 限制采集数量（0表示不限制）
             type: 采集类型
-            down_path: 下载路径
             cookie: Cookie字符串
             user_agent: User-Agent字符串，留空使用内置默认值
             filters: 过滤条件
@@ -54,11 +52,6 @@ class Douyin:
         self.type = type
         self.filters = filters or {}
         self.on_new_items = on_new_items  # 新增回调函数
-
-        # 初始化下载路径
-        self.down_path = os.path.join(".", down_path)
-        if not os.path.exists(self.down_path):
-            os.makedirs(self.down_path)
 
         # 初始化状态
         self.has_more = True
@@ -107,7 +100,7 @@ class Douyin:
 
         注意：此方法仅用于向后兼容，建议使用 run() 方法
         """
-        handler = TargetHandler(self.request, self.target, self.type, self.down_path)
+        handler = TargetHandler(self.request, self.target, self.type)
         handler.parse_target_id()
 
         # 更新目标信息
@@ -118,7 +111,7 @@ class Douyin:
     def _get_target_info(self):
         """获取目标信息"""
         # 使用TargetHandler处理目标
-        handler = TargetHandler(self.request, self.target, self.type, self.down_path)
+        handler = TargetHandler(self.request, self.target, self.type)
         handler.parse_target_id()
 
         # 更新目标信息
@@ -128,16 +121,9 @@ class Douyin:
         logger.debug(f"目标信息更新: type={self.type}, id={self.id}")
 
         # 获取详细信息
-        self.title, self.down_path, _, self.info, self.render_data = (
+        self.title, self.info, self.render_data = (
             handler.fetch_target_info()
         )
-
-        # 增量采集：加载旧数据
-        if self.type == "post":
-            json_path = f"{self.down_path}.json"
-            if os.path.exists(json_path) and not self.results_old:
-                with open(json_path, "r", encoding="utf-8") as f:
-                    self.results_old = json.load(f)
 
     def get_aweme_detail(self):
         """获取单个作品详情"""
@@ -157,7 +143,6 @@ class Douyin:
                 self.limit,
                 self.has_more,
                 self.type,
-                self.down_path,
             )
             # 触发回调
             if new_items and self.on_new_items:
@@ -215,7 +200,6 @@ class Douyin:
                             self.limit,
                             self.has_more,
                             self.type,
-                            self.down_path,
                         )
                         # 触发回调
                         if new_items and self.on_new_items:
@@ -236,19 +220,12 @@ class Douyin:
         self.save()
 
     def save(self):
-        """保存采集结果（JSON数据和aria2配置）"""
+        """保存采集结果"""
         if not self.results:
             logger.info("本次采集结果为空")
             return
 
         logger.success(f"采集完成，本次共采集到 {len(self.results)} 条结果")
-
-        # 保存JSON数据
-        if self.type == "post":
-            self.results.sort(key=lambda item: item["id"], reverse=True)
-        save_json(self.down_path, self.results)
-
-        # 保存aria2下载配置
 
 
 

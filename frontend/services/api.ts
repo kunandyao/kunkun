@@ -4,7 +4,6 @@
  * 提供简洁的 API 调用方式，如：
  * - api.settings.get()
  * - api.task.start({ type, target, limit })
- * - api.aria2.config()
  */
 
 import { AppSettings, TaskType, DouyinWork, LoginRequest, RegisterRequest, ChangePasswordRequest, AuthResponse, User } from '../types';
@@ -98,10 +97,14 @@ async function fetchAPI<T>(
 ): Promise<T> {
   const url = `${API_BASE_URL}${endpoint}`;
   
+  // 获取token
+  const token = localStorage.getItem('token');
+  
   const response = await fetch(url, {
     ...options,
     headers: {
       'Content-Type': 'application/json',
+      ...(token && { 'Authorization': `Bearer ${token}` }),
       ...options.headers,
     },
   });
@@ -130,6 +133,24 @@ async function post<T>(endpoint: string, body?: unknown): Promise<T> {
     body: body ? JSON.stringify(body) : undefined,
   });
 }
+
+/**
+ * PUT 请求
+ */
+async function put<T>(endpoint: string, body?: unknown): Promise<T> {
+  return fetchAPI<T>(endpoint, {
+    method: 'PUT',
+    body: body ? JSON.stringify(body) : undefined,
+  });
+}
+
+/**
+ * DELETE 请求
+ */
+async function del<T>(endpoint: string): Promise<T> {
+  return fetchAPI<T>(endpoint, { method: 'DELETE' });
+}
+
 
 // ============================================================================
 // API 模块
@@ -449,6 +470,29 @@ export const api = {
         '/api/system/received-cookie'
       ),
   },
+
+  // ========================================================================
+  // 用户管理
+  // ========================================================================
+  users: {
+    /** 获取用户列表 */
+    list: () => get<User[]>('/api/users'),
+    
+    /** 获取用户详情 */
+    get: (userId: number) => get<User>(`/api/users/${userId}`),
+    
+    /** 更新用户信息 */
+    update: (userId: number, data: {
+      email?: string;
+      role?: string;
+      status?: string;
+      password?: string;
+    }) => put<User>(`/api/users/${userId}`, data),
+    
+    /** 删除用户 */
+    delete: (userId: number) => del<{ status: string; message: string }>(`/api/users/${userId}`),
+  },
+
 };
 
 export default api;

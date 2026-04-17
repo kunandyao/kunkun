@@ -14,7 +14,6 @@ export enum ErrorType {
   PERMISSION = 'permission',     // 权限错误
   COOKIE = 'cookie',            // Cookie相关错误
   FILE_NOT_FOUND = 'file_not_found', // 文件不存在
-  ARIA2 = 'aria2',              // Aria2服务错误
   BACKEND = 'backend',          // 后端服务错误
   VALIDATION = 'validation',    // 输入验证错误
   UNKNOWN = 'unknown'           // 未知错误
@@ -77,14 +76,6 @@ export class ErrorClassifier {
       /ENOENT/i,
       /404/
     ],
-    [ErrorType.ARIA2]: [
-      /aria2/i,
-      /下载服务/i,
-      /download service/i,
-      /rpc.*失败/i,
-      /rpc.*连接/i,
-      /6800/
-    ],
     [ErrorType.BACKEND]: [
       /backend not available/i,
       /后端服务/i,
@@ -112,7 +103,6 @@ export class ErrorClassifier {
 
     // 按优先级顺序检查，更具体的错误类型优先
     const priorityOrder = [
-      ErrorType.ARIA2,
       ErrorType.BACKEND,
       ErrorType.COOKIE,
       ErrorType.FILE_NOT_FOUND,
@@ -161,11 +151,6 @@ export class ErrorMessageGenerator {
       [ErrorType.FILE_NOT_FOUND]: {
         userMessage: '未找到相关文件或数据',
         suggestion: '请先完成采集任务或检查文件路径',
-        actionable: true
-      },
-      [ErrorType.ARIA2]: {
-        userMessage: 'Aria2下载服务异常',
-        suggestion: '请检查下载服务配置或重启应用',
         actionable: true
       },
       [ErrorType.BACKEND]: {
@@ -283,7 +268,6 @@ export class ErrorHandler {
       switch (type) {
         case ErrorType.NETWORK:
         case ErrorType.BACKEND:
-        case ErrorType.ARIA2:
           toast.error(toastMessage);
           break;
         case ErrorType.COOKIE:

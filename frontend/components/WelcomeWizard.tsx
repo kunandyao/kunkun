@@ -22,23 +22,20 @@ interface WelcomeWizardProps {
   onComplete: () => void;
 }
 
-type WizardStep = 'welcome' | 'cookie' | 'download' | 'complete';
+type WizardStep = 'welcome' | 'cookie' | 'complete';
 
 export const WelcomeWizard: React.FC<WelcomeWizardProps> = ({ isOpen, onClose, onComplete }) => {
   const [currentStep, setCurrentStep] = useState<WizardStep>('welcome');
   const [settings, setSettings] = useState<AppSettings>({
     cookie: APP_DEFAULTS.COOKIE,
     userAgent: APP_DEFAULTS.USER_AGENT,
-    downloadPath: APP_DEFAULTS.DOWNLOAD_PATH,
-    maxRetries: APP_DEFAULTS.MAX_RETRIES,
-    maxConcurrency: APP_DEFAULTS.MAX_CONCURRENCY,
     enableIncrementalFetch: APP_DEFAULTS.ENABLE_INCREMENTAL_FETCH
   });
   const [isSaving, setIsSaving] = useState(false);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   const handleNext = () => {
-    const steps: WizardStep[] = ['welcome', 'cookie', 'download', 'complete'];
+    const steps: WizardStep[] = ['welcome', 'cookie', 'complete'];
     const currentIndex = steps.indexOf(currentStep);
     if (currentIndex < steps.length - 1) {
       setCurrentStep(steps[currentIndex + 1]);
@@ -46,7 +43,7 @@ export const WelcomeWizard: React.FC<WelcomeWizardProps> = ({ isOpen, onClose, o
   };
 
   const handleBack = () => {
-    const steps: WizardStep[] = ['welcome', 'cookie', 'download', 'complete'];
+    const steps: WizardStep[] = ['welcome', 'cookie', 'complete'];
     const currentIndex = steps.indexOf(currentStep);
     if (currentIndex > 0) {
       setCurrentStep(steps[currentIndex - 1]);
@@ -61,21 +58,8 @@ export const WelcomeWizard: React.FC<WelcomeWizardProps> = ({ isOpen, onClose, o
   const handleComplete = async () => {
     setIsSaving(true);
     try {
-      // 如果下载路径为空，先从后端获取默认路径
-      let finalSettings = { ...settings };
-      if (!finalSettings.downloadPath) {
-        try {
-          const currentSettings = await bridge.getSettings();
-          finalSettings.downloadPath = currentSettings.downloadPath;
-        } catch (err) {
-          console.error('获取默认路径失败:', err);
-          // 如果获取失败，使用一个占位符，后端会使用默认值
-          finalSettings.downloadPath = './download';
-        }
-      }
-
       // 保存配置
-      await bridge.saveSettings(finalSettings);
+      await bridge.saveSettings(settings);
       console.log('配置保存成功');
       // 完成向导
       onComplete();
@@ -87,17 +71,6 @@ export const WelcomeWizard: React.FC<WelcomeWizardProps> = ({ isOpen, onClose, o
       onComplete();
     } finally {
       setIsSaving(false);
-    }
-  };
-
-  const handleSelectFolder = async () => {
-    try {
-      const path = await bridge.selectFolder();
-      if (path) {
-        setSettings(prev => ({ ...prev, downloadPath: path }));
-      }
-    } catch (e) {
-      console.error("Failed to select folder", e);
     }
   };
 
@@ -129,8 +102,8 @@ export const WelcomeWizard: React.FC<WelcomeWizardProps> = ({ isOpen, onClose, o
         {/* 进度指示器 */}
         <div className="px-6 py-3 bg-gray-50/50 border-b border-gray-100">
           <div className="flex items-center justify-between">
-            {['欢迎', 'Cookie', '下载路径', '完成'].map((label, index) => {
-              const steps: WizardStep[] = ['welcome', 'cookie', 'download', 'complete'];
+            {['欢迎', 'Cookie', '完成'].map((label, index) => {
+              const steps: WizardStep[] = ['welcome', 'cookie', 'complete'];
               const stepIndex = steps.indexOf(currentStep);
               const isActive = index === stepIndex;
               const isCompleted = index < stepIndex;
@@ -326,61 +299,6 @@ export const WelcomeWizard: React.FC<WelcomeWizardProps> = ({ isOpen, onClose, o
             </div>
           )}
 
-          {/* 下载路径设置页面 */}
-          {currentStep === 'download' && (
-            <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
-              <div>
-                <h2 className="text-2xl font-bold text-gray-900 mb-2">设置下载路径</h2>
-                <p className="text-gray-600">选择下载文件的默认保存位置</p>
-              </div>
-
-              <div>
-                <label htmlFor="wizard-download-path-input" className="block text-sm font-semibold text-gray-700 mb-3">
-                  默认下载路径
-                </label>
-                <div className="flex gap-3">
-                  <input
-                    id="wizard-download-path-input"
-                    name="downloadPath"
-                    type="text"
-                    value={settings.downloadPath}
-                    onChange={(e) => setSettings({ ...settings, downloadPath: e.target.value })}
-                    placeholder="例如 D:\Downloads\Douyin"
-                    className="flex-1 px-4 py-3 border border-gray-200 rounded-xl bg-gray-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
-                  />
-                  <button
-                    onClick={handleSelectFolder}
-                    className="px-6 py-3 bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white rounded-xl flex items-center gap-2 transition-all shadow-lg shadow-blue-200"
-                    title="选择文件夹"
-                  >
-                    <FolderOpen size={18} />
-                    <span className="font-medium">浏览</span>
-                  </button>
-                </div>
-                <p className="mt-2 text-xs text-gray-500">
-                  💡 如果不设置，将使用默认路径：程序所在目录/download
-                </p>
-              </div>
-
-              <div className="bg-gradient-to-br from-blue-50 to-purple-50 rounded-2xl p-6">
-                <h3 className="font-semibold text-gray-900 mb-3">其他配置：</h3>
-                <div className="space-y-3 text-sm text-gray-700">
-                  <div className="flex justify-between items-center">
-                    <span>最大重试次数：</span>
-                    <span className="font-semibold text-blue-600">3 次</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span>同时下载任务数：</span>
-                    <span className="font-semibold text-purple-600">5 个</span>
-                  </div>
-                  <p className="text-xs text-gray-500 pt-2 border-t border-gray-200">
-                    这些参数已设置为推荐值，您可以稍后在设置中调整
-                  </p>
-                </div>
-              </div>
-            </div>
-          )}
-
           {/* 完成页面 */}
           {currentStep === 'complete' && (
             <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-300">
@@ -406,17 +324,7 @@ export const WelcomeWizard: React.FC<WelcomeWizardProps> = ({ isOpen, onClose, o
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-start gap-3">
-                    <div className="w-6 h-6 bg-purple-500 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
-                      <Check className="text-white" size={14} />
-                    </div>
-                    <div className="flex-1">
-                      <p className="font-medium text-gray-900">下载路径</p>
-                      <p className="text-gray-600 break-all">
-                        {settings.downloadPath || '使用默认路径'}
-                      </p>
-                    </div>
-                  </div>
+
                 </div>
               </div>
 

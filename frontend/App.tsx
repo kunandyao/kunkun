@@ -9,6 +9,7 @@ import { LogPanel } from './components/LogPanel';
 import { SettingsModal } from './components/SettingsModal';
 import { Sidebar } from './components/Sidebar';
 import { ToastContainer, toast } from './components/Toast';
+import { UserManagement } from './components/UserManagement';
 import { WelcomeWizard } from './components/WelcomeWizard';
 import { WorkCard } from './components/WorkCard';
 import { bridge } from './services/bridge';
@@ -131,7 +132,7 @@ export const App: React.FC = () => {
   const inputRef = useRef<HTMLInputElement>(null);  // 输入框 DOM 引用
 
   // --- 任务相关状态 ---
-  const [activeTab, setActiveTab] = useState<TaskType>(TaskType.AWEME);  // 当前选中的任务类型
+  const [activeTab, setActiveTab] = useState<TaskType | string>(TaskType.AWEME);  // 当前选中的任务类型
   const [maxCount, setMaxCount] = useState<number>(0);  // 0 表示不限制数量
   const [showLimitMenu, setShowLimitMenu] = useState(false);  // 是否显示数量限制菜单
   const limitMenuRef = useRef<HTMLDivElement>(null);  // 数量限制菜单的引用，用于检测外部点击
@@ -224,18 +225,26 @@ export const App: React.FC = () => {
    * 初始化时检查用户登录状态
    */
   useEffect(() => {
+    // 检查本地存储中的用户信息和token
     const storedUser = localStorage.getItem('user');
     const storedToken = localStorage.getItem('token');
+    
     if (storedUser && storedToken) {
       try {
         const user = JSON.parse(storedUser);
         setCurrentUser(user);
         setToken(storedToken);
         setRequireAuth(false);
-      } catch (e) {
+      } catch (error) {
+        // 解析失败，清除本地存储
         localStorage.removeItem('user');
         localStorage.removeItem('token');
+        setCurrentUser(null);
+        setToken(null);
+        setRequireAuth(true);
       }
+    } else {
+      setRequireAuth(true);
     }
   }, []);
 
@@ -243,7 +252,7 @@ export const App: React.FC = () => {
    * 处理用户手动切换任务类型
    * 不清空数据，通过 resultsTaskType 控制显示
    */
-  const handleTabChange = useCallback((newTab: TaskType) => {
+  const handleTabChange = useCallback((newTab: TaskType | string) => {
     if (newTab !== activeTab) {
       setActiveTab(newTab);
       // 切换任务类型时，清空之前的采集结果
@@ -362,12 +371,18 @@ export const App: React.FC = () => {
 
 
   /**
-   * 开始采集任务
+   * 处理开始爬取按钮点击
    */
-  const handleSearch = useCallback(async () => {
+  const handleStartCrawl = useCallback(async () => {
+    // 验证输入
     if (!inputValue.trim()) {
       setInputError(true);
-      inputRef.current?.focus();
+      toast.error('请输入作品链接或ID');
+      return;
+    }
+
+    // 检查是否是用户管理页面
+    if (activeTab === 'user_management') {
       return;
     }
 
@@ -379,7 +394,7 @@ export const App: React.FC = () => {
     try {
       // 启动任务
       const target = inputValue.trim();
-      const result = await bridge.startTask(activeTab, target, maxCount || 0);
+      const result = await bridge.startTask(activeTab as TaskType, target, maxCount || 0);
 
       if (result.task_id) {
         setCurrentTaskId(result.task_id);
@@ -399,9 +414,9 @@ export const App: React.FC = () => {
    */
   const handleInputKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && !isLoading) {
-      handleSearch();
+      handleStartCrawl();
     }
-  }, [handleSearch, isLoading]);
+  }, [handleStartCrawl, isLoading]);
 
   /**
    * 处理作品点击事件
@@ -453,13 +468,35 @@ export const App: React.FC = () => {
     >
       {/* 强制登录界面 */}
       {requireAuth && (
-        <div className="fixed inset-0 bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50 flex items-center justify-center z-50">
-          <div className="w-full max-w-md p-8">
-            <AuthModal
-              isOpen={true}
-              onClose={() => {}}
-              onAuthSuccess={handleAuthSuccess}
-            />
+        <div 
+          className="fixed inset-0 flex items-stretch z-50"
+          style={{
+            backgroundImage: 'url(/login-bg.png)',
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+            backgroundRepeat: 'no-repeat'
+          }}
+        >
+          <div className="absolute inset-0 bg-white/20"></div>
+          
+          <div className="relative z-10 w-full flex justify-end items-center h-full px-16 py-8">
+            {/* 右侧登录表单 */}
+            <div className="w-full md:w-[600px]">
+              <div className="bg-white rounded-2xl shadow-xl p-12">
+                {/* 系统标题 */}
+                <div className="mb-10 text-center">
+                  <h1 className="text-2xl font-bold text-gray-900 mb-3">抖音舆情分析系统</h1>
+                  <p className="text-sm text-gray-600">洞察舆情，把握趋势</p>
+                </div>
+                
+                <AuthModal
+                  isOpen={true}
+                  onClose={() => {}}
+                  onAuthSuccess={handleAuthSuccess}
+                  isForced={true}
+                />
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -493,6 +530,10 @@ export const App: React.FC = () => {
             ) : activeTab === TaskType.HOT_COMMENT_DASHBOARD ? (
               <LightErrorBoundary fallbackMessage="热榜评论大屏页面加载失败">
                 <HotCommentDashboard refreshTrigger={dashboardRefreshTrigger} />
+              </LightErrorBoundary>
+            ) : activeTab === 'user_management' ? (
+              <LightErrorBoundary fallbackMessage="用户管理页面加载失败">
+                <UserManagement />
               </LightErrorBoundary>
             ) : (
               <main className="flex-1 flex flex-col min-w-0 relative">
@@ -612,7 +653,7 @@ export const App: React.FC = () => {
 
                             <button
                               className="px-6 py-3 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-medium rounded-xl transition-all duration-200 flex items-center gap-2 shadow-md hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
-                              onClick={handleSearch}
+                              onClick={handleStartCrawl}
                               disabled={isLoading || !inputValue.trim()}
                             >
                               {isLoading ? (

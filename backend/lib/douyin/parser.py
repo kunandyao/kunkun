@@ -24,7 +24,6 @@ class DataParser:
         limit: int,
         has_more: bool,
         type: str,
-        down_path: str,
     ) -> tuple[List[dict], bool]:
         """
         解析作品列表
@@ -36,7 +35,6 @@ class DataParser:
             limit: 限制数量
             has_more: 是否还有更多数据
             type: 采集类型
-            down_path: 下载路径
 
         Returns:
             tuple: (新增的作品列表, 是否还有更多数据)

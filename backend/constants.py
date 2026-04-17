@@ -22,19 +22,10 @@ CONFIG_DIR = os.path.join(PROJECT_ROOT, "config")
 DOWNLOAD_DIR = os.path.join(PROJECT_ROOT, "download")
 SETTINGS_FILE = os.path.join(CONFIG_DIR, "settings.json")
 
-# 下载配置默认值
-DOWNLOAD_DEFAULTS = {
-    "MAX_RETRIES": 3,
-    "MAX_CONCURRENCY": 5,
-}
-
 # 默认设置（用于首次运行创建配置文件）
 DEFAULT_SETTINGS = {
     "cookie": "",
     "userAgent": "",
-    "downloadPath": DOWNLOAD_DIR,
-    "maxRetries": DOWNLOAD_DEFAULTS["MAX_RETRIES"],
-    "maxConcurrency": DOWNLOAD_DEFAULTS["MAX_CONCURRENCY"],
     "windowWidth": 1280,
     "windowHeight": 720,
     "enableIncrementalFetch": True,

@@ -6,11 +6,21 @@
 
 import csv
 import datetime
+import json
 import os
 import re
+import requests
+import time
+from urllib.parse import quote
 from typing import Any, Dict, List, Optional, Tuple
 
 from loguru import logger
+
+from backend.lib.database import db_manager
+from backend.lib.database.models import CommentModel, HotSearchModel, VideoModel
+from backend.lib.cover_utils import download_cover
+from backend.lib.douyin.types import APIEndpoint
+from sqlalchemy import select
 
 from .client import DouyinClient
 from .request import Request
@@ -35,7 +45,7 @@ class DouyinHotCommentFetcher:
 
     def get_hot_videos(self, count: int = 10) -> List[Dict[str, Any]]:
         """
-        获取热榜视频列表（直接使用 uapis.cn 接口）
+        获取热榜视频列表（使用 uapis.cn 接口获取数据）
 
         Args:
             count: 获取热榜视频数量
@@ -44,18 +54,31 @@ class DouyinHotCommentFetcher:
             List[Dict]: 热榜视频信息列表
         """
         try:
-            import requests
-            
-            # 直接从 uapis.cn 获取完整的热榜数据（包含热值、封面、video_count、sentence_id）
+            # 从 uapis.cn 获取热榜数据
             uapi_url = "https://uapis.cn/api/v1/misc/hotboard?type=douyin"
             logger.info(f"获取 uapis.cn 热榜数据：{uapi_url}")
             uapi_response = requests.get(uapi_url, timeout=30)
             uapi_data = uapi_response.json()
             uapi_list = uapi_data.get("list", [])
             
+            update_time = uapi_data.get('update_time', 'N/A')
             logger.info(f"uapis.cn 获取到 {len(uapi_list)} 条热榜数据")
+            logger.info(f"uapis.cn 更新时间：{update_time}")
             
-            # 直接转换数据格式
+            # 检查数据是否为最新
+            from datetime import datetime, timezone
+            if update_time:
+                try:
+                    update_datetime = datetime.fromisoformat(update_time.replace('Z', '+00:00'))
+                    current_time = datetime.now(timezone.utc)
+                    time_diff = current_time - update_datetime
+                    hours_diff = time_diff.total_seconds() / 3600
+                    if hours_diff > 6:
+                        logger.warning(f"uapis.cn 数据可能不是最新的，已更新 {hours_diff:.1f} 小时前")
+                except Exception as e:
+                    logger.warning(f"解析更新时间失败：{e}")
+            
+            # 转换数据格式
             hot_videos = []
             for item in uapi_list[:count]:
                 sentence_id = item.get("extra", {}).get("sentence_id", "")
@@ -128,18 +151,18 @@ class DouyinHotCommentFetcher:
         Returns:
             (热值映射，事件时间映射)，key 为 sentence_id
         """
-        from datetime import datetime
         
         # 获取 cookie
         try:
             cookie_response = requests.get("https://login.douyin.com/", timeout=10)
-            cookies = cookie_response.headers.getSetCookie()
+            # 正确获取Set-Cookie头
+            cookies = cookie_response.headers.getlist('Set-Cookie') if hasattr(cookie_response.headers, 'getlist') else []
             cookie_str = "; ".join(cookies)
         except Exception as e:
             logger.warning(f"获取抖音 cookie 失败：{e}")
             cookie_str = ""
         
-        douyin_url = "https://www.douyin.com/aweme/v1/web/hot/search/list/?device_platform=webapp&aid=6383&channel=channel_pc_web&detail_list=1"
+        douyin_url = "https://www.douyin.com/aweme/v1/web/hot/search/list/"
         
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
@@ -170,6 +193,63 @@ class DouyinHotCommentFetcher:
             logger.warning(f"获取抖音热值失败：{e}")
         
         return hot_map, {}
+    
+    def _fetch_realtime_hot_values(self) -> dict:
+        """从抖音热榜页面爬取实时热度值
+        
+        Returns:
+            dict: 标题 -> 实时热度值
+        """
+        hot_map = {}
+        
+        try:
+            # 访问抖音热榜页面
+            hot_url = "https://www.douyin.com/hot"
+            logger.info(f"访问抖音热榜页面：{hot_url}")
+            
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Language": "zh-CN,zh;q=0.9",
+                "Connection": "keep-alive",
+            }
+            
+            response = requests.get(hot_url, headers=headers, timeout=30)
+            text = response.text
+            
+            if not text:
+                logger.warning("抖音热榜页面内容为空")
+                return hot_map
+            
+            # 使用正则表达式提取热度值
+            # 匹配热榜条目的模式
+            import re
+            # 匹配热度值的模式，例如：<span class="hot-value">12345678</span>
+            hot_pattern = re.compile(r'<span[^>]*class="[^"]*hot-value[^"]*"[^>]*>([\d,]+)</span>', re.DOTALL)
+            # 匹配标题的模式，例如：<span class="hot-topic-title">标题内容</span>
+            title_pattern = re.compile(r'<span[^>]*class="[^"]*hot-topic-title[^"]*"[^>]*>(.*?)</span>', re.DOTALL)
+            
+            # 提取热度值和标题
+            hot_values = hot_pattern.findall(text)
+            titles = title_pattern.findall(text)
+            
+            if hot_values and titles:
+                # 确保热度值和标题数量匹配
+                min_length = min(len(hot_values), len(titles))
+                for i in range(min_length):
+                    title = titles[i].strip()
+                    hot_value = hot_values[i].strip().replace(',', '')  # 去除逗号
+                    if title and hot_value:
+                        hot_map[title] = hot_value
+                
+                logger.info(f"从抖音热榜页面成功提取 {len(hot_map)} 条实时热度数据")
+            else:
+                logger.warning("未从抖音热榜页面提取到热度数据")
+                
+        except Exception as e:
+            logger.warning(f"从抖音热榜页面获取实时热度失败：{e}")
+        
+        return hot_map
 
     def get_video_from_hot_url(self, hot_url: str, hot_title: str) -> Optional[str]:
         """
@@ -195,7 +275,7 @@ class DouyinHotCommentFetcher:
             
             # 从页面中提取第一个视频 URL
             # 抖音话题页面的视频 URL 格式：/video/7123456789012345678
-            import re
+
             
             # 匹配视频 URL 模式
             video_url_pattern = r'/video/(\d{19})'
@@ -316,7 +396,6 @@ class DouyinHotCommentFetcher:
                     break
 
                 # 添加延迟，避免请求过快
-                import time
                 time.sleep(0.5)
 
             logger.info(f"爬取到 {len(all_comments)} 条评论")
@@ -342,8 +421,6 @@ class DouyinHotCommentFetcher:
             comments: 评论列表
         """
         try:
-            from backend.lib.database import db_manager
-            from backend.lib.database.models import CommentModel
             
             saved_count = 0
             logger.info(f"开始保存 {len(comments)} 条评论到数据库")
@@ -376,9 +453,6 @@ class DouyinHotCommentFetcher:
             List[str]: aweme_id 列表
         """
         try:
-            from backend.lib.douyin.types import APIEndpoint
-            import json
-            from urllib.parse import quote
             
             # 构建 filter_selected JSON
             filter_selected = json.dumps({
@@ -477,8 +551,7 @@ class DouyinHotCommentFetcher:
             handler = TargetHandler(
                 request=self.request,
                 target=video_url.strip(),
-                type="aweme",
-                down_path="temp"
+                type="aweme"
             )
             
             # 解析目标 ID
@@ -569,7 +642,7 @@ class DouyinHotCommentFetcher:
                 result["total_comments"] += len(comments)
 
                 # 添加延迟，避免请求过快
-                import time
+
                 time.sleep(1.0)
 
             result["message"] = f"爬取完成，共 {result['total_comments']} 条评论"
@@ -606,7 +679,7 @@ class DouyinHotCommentFetcher:
             
             # 从页面中提取第一个视频 URL
             # 抖音话题页面的视频 URL 格式：/video/7123456789012345678
-            import re
+
             
             # 匹配视频 URL 模式
             video_url_pattern = r'/video/(\d{19})'
@@ -732,7 +805,6 @@ class DouyinHotCommentFetcher:
 
                 # 更新 hot_search 表中的 aweme_id
                 try:
-                    from backend.lib.database import db_manager
                     hot_id = video.get("hot_id") or video.get("sentence_id")
                     if hot_id and aweme_id:
                         sql_update = "UPDATE hot_search SET aweme_id = %s WHERE video_id = %s AND (aweme_id IS NULL OR aweme_id = '')"
@@ -743,7 +815,7 @@ class DouyinHotCommentFetcher:
                     logger.warning(f"更新 hot_search aweme_id 失败：{e_update}")
 
                 # 添加延迟，避免请求过快
-                import time
+
                 time.sleep(1.5)
 
             result["message"] = f"爬取完成，共 {result['total_comments']} 条评论"
@@ -839,8 +911,6 @@ class DouyinHotCommentFetcher:
             aweme_id: 视频 ID
         """
         try:
-            from backend.lib.database import db_manager
-            from backend.lib.database.models import CommentModel
             
             if not comments:
                 return
@@ -867,9 +937,6 @@ class DouyinHotCommentFetcher:
             Optional[str]: 视频 aweme_id，如果未找到返回 None
         """
         try:
-            from backend.lib.database import db_manager
-            from backend.lib.database.models import HotSearchModel
-            from sqlalchemy import select
             
             with db_manager.get_session() as session:
                 stmt = select(HotSearchModel).where(HotSearchModel.hot_id == hot_id)
@@ -892,9 +959,6 @@ class DouyinHotCommentFetcher:
             hot_videos: 热榜视频列表
         """
         try:
-            from backend.lib.database import db_manager
-            from backend.lib.database.models import HotSearchModel
-            from backend.lib.cover_utils import download_cover
             
             crawl_time = datetime.datetime.now()
             saved_count = 0
@@ -955,35 +1019,26 @@ class DouyinHotCommentFetcher:
     def save_video_info_to_db(self, video_info: Dict[str, Any]):
         """
         保存视频信息到数据库
-        
+
         Args:
             video_info: 视频信息
         """
         try:
-            from backend.lib.database import db_manager
-            from backend.lib.database.models import VideoModel
-            
+
             # 转换字段名以匹配 VideoModel.insert_sql 的期望格式
             data = {
                 "id": video_info.get("aweme_id"),  # aweme_id → id
                 "desc": video_info.get("title"),  # title → desc
-                "author_nickname": video_info.get("author"),  # author → author_nickname
-                "duration": video_info.get("duration"),
-                "cover": video_info.get("cover_url"),  # cover_url → cover
-                "play_count": video_info.get("play_count"),
-                "digg_count": video_info.get("digg_count"),
-                "comment_count": video_info.get("comment_count"),
-                "share_count": video_info.get("share_count"),
                 "crawl_time": datetime.datetime.now(),
             }
-            
+
             sql, params = VideoModel.insert_sql(data)
-            
+
             with db_manager.get_cursor() as cursor:
                 cursor.execute(sql, params)
-            
+
             logger.info(f"已将视频信息保存到数据库 (aweme_id: {video_info.get('aweme_id')})")
-            
+
         except Exception as e:
             logger.error(f"保存视频信息到数据库失败：{e}")
 
@@ -1140,7 +1195,7 @@ class DouyinHotCommentFetcher:
                 result["total_comments"] += len(comments)
 
                 # 添加延迟，避免请求过快
-                import time
+
                 time.sleep(1.0)
 
             result["message"] = f"爬取完成，共 {result['total_comments']} 条评论"

@@ -1,5 +1,5 @@
 
-import { ChevronDown, Copy, Terminal, Trash2 } from 'lucide-react';
+import { ChevronDown, Copy, Filter, Terminal, Trash2 } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
 import { LogEntry, logger } from '../services/logger';
 
@@ -10,6 +10,8 @@ interface LogPanelProps {
 
 export const LogPanel: React.FC<LogPanelProps> = ({ isOpen, onToggle }) => {
   const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [filteredLogs, setFilteredLogs] = useState<LogEntry[]>([]);
+  const [showOnlyResults, setShowOnlyResults] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
 
@@ -20,6 +22,32 @@ export const LogPanel: React.FC<LogPanelProps> = ({ isOpen, onToggle }) => {
     });
     return unsubscribe;
   }, []);
+
+  // 过滤日志
+  useEffect(() => {
+    if (showOnlyResults) {
+      // 只显示任务完成相关的日志
+      const filtered = logs.filter(log => {
+        const message = log.message;
+        // 爬取相关关键词
+        const crawlKeywords = [
+          '准备爬取评论', '爬取完成', '爬取失败',
+          '开始爬取视频', '评论已保存', '保存到',
+          '数据清洗', '清洗完成', '清洗失败',
+          '开始 Spark', 'Spark 清洗完成',
+          '分词完成', '语料生成完成',
+          '从CSV加载数据完成', '保存 CSV 完成',
+          '开始数据', '数据保存', '数据导出',
+          '分析完成', '分析失败', '开始分析',
+          '任务完成', '任务失败', '任务开始',
+        ];
+        return crawlKeywords.some(keyword => message.includes(keyword));
+      });
+      setFilteredLogs(filtered);
+    } else {
+      setFilteredLogs(logs);
+    }
+  }, [logs, showOnlyResults]);
 
   // 只在日志面板打开时订阅后端日志，关闭时取消订阅
   useEffect(() => {
@@ -34,7 +62,7 @@ export const LogPanel: React.FC<LogPanelProps> = ({ isOpen, onToggle }) => {
     if (autoScroll && scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [logs, autoScroll, isOpen]);
+  }, [filteredLogs, autoScroll, isOpen]);
 
   const handleScroll = () => {
     if (!scrollRef.current) return;
@@ -66,6 +94,15 @@ export const LogPanel: React.FC<LogPanelProps> = ({ isOpen, onToggle }) => {
         </div>
         <div className="flex items-center gap-1">
           <button
+            onClick={() => setShowOnlyResults(!showOnlyResults)}
+            className={`p-1.5 hover:bg-gray-700 rounded transition-colors ${
+              showOnlyResults ? 'text-emerald-400 bg-gray-700/30' : 'text-gray-400 hover:text-white'
+            }`}
+            title={showOnlyResults ? '显示所有日志' : '只显示任务结果'}
+          >
+            <Filter size={12} />
+          </button>
+          <button
             onClick={copyLogs}
             className="p-1.5 hover:bg-gray-700 rounded text-gray-400 hover:text-white transition-colors"
             title="复制日志"
@@ -94,10 +131,12 @@ export const LogPanel: React.FC<LogPanelProps> = ({ isOpen, onToggle }) => {
         ref={scrollRef}
         onScroll={handleScroll}
       >
-        {logs.length === 0 && (
-          <div className="text-gray-600 text-xs italic opacity-50 select-none">Waiting for tasks...</div>
+        {filteredLogs.length === 0 && (
+          <div className="text-gray-600 text-xs italic opacity-50 select-none">
+            {showOnlyResults ? 'No task results found...' : 'Waiting for tasks...'}
+          </div>
         )}
-        {logs.map((log) => (
+        {filteredLogs.map((log) => (
           <div key={log.id} className="text-xs flex gap-3 leading-relaxed hover:bg-white/5 px-1 -mx-1 rounded">
             <span className="text-gray-600 shrink-0 font-light select-none">[{log.timestamp}]</span>
             <span className={`break-all ${log.level === 'error' ? 'text-red-400 font-bold' :

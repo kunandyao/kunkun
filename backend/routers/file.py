@@ -1,18 +1,15 @@
+# -*- encoding: utf-8 -*-
 """
 文件操作路由
 
-提供文件夹打开、文件存在检查、配置文件读取和媒体文件流接口。
+提供文件访问、文件夹操作等接口。
 """
 
-import glob
-import mimetypes
 import os
-import platform
-import subprocess
-from typing import Any, Dict, Optional
+from pathlib import Path
+from typing import Any, Dict, List
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import FileResponse
 from loguru import logger
 from pydantic import BaseModel
 
@@ -20,9 +17,6 @@ from ..constants import DOWNLOAD_DIR
 from ..settings import settings
 
 router = APIRouter(prefix="/api/file", tags=["文件操作"])
-
-# 允许的媒体文件扩展名
-ALLOWED_MEDIA_EXTENSIONS = {".mp4", ".webm", ".jpg", ".jpeg", ".png", ".gif", ".webp"}
 
 
 # ============================================================================
@@ -32,46 +26,39 @@ ALLOWED_MEDIA_EXTENSIONS = {".mp4", ".webm", ".jpg", ".jpeg", ".png", ".gif", ".
 
 class OpenFolderRequest(BaseModel):
     """打开文件夹请求"""
-
     folder_path: str
-
-
-class CheckFileExistsRequest(BaseModel):
-    """检查文件存在请求"""
-
-    file_path: str
-
-
-class ReadConfigFileRequest(BaseModel):
-    """读取配置文件请求"""
-
-    file_path: str
 
 
 class OpenFolderResponse(BaseModel):
     """打开文件夹响应"""
-
     success: bool
 
 
-class CheckFileExistsResponse(BaseModel):
-    """检查文件存在响应"""
+class CheckFileExistsRequest(BaseModel):
+    """检查文件是否存在请求"""
+    file_path: str
 
+
+class CheckFileExistsResponse(BaseModel):
+    """检查文件是否存在响应"""
     exists: bool
+
+
+class ReadConfigFileRequest(BaseModel):
+    """读取配置文件请求"""
+    file_path: str
 
 
 class ReadConfigFileResponse(BaseModel):
     """读取配置文件响应"""
-
     content: str
 
 
 class FindLocalFileResponse(BaseModel):
     """查找本地文件响应"""
-
     found: bool
-    video_path: Optional[str] = None
-    images: Optional[list[str]] = None
+    video_path: str | None = None
+    images: List[str] | None = None
 
 
 # ============================================================================
@@ -79,67 +66,41 @@ class FindLocalFileResponse(BaseModel):
 # ============================================================================
 
 
+def _validate_path(file_path: str, allow_configs: bool = False) -> str:
+    """验证文件路径安全性"""
+    abs_path = os.path.abspath(file_path)
+    download_dir = os.path.abspath(settings.get("downloadPath", DOWNLOAD_DIR))
+    
+    if allow_configs:
+        config_dir = os.path.abspath("config")
+        if abs_path.startswith(config_dir):
+            return abs_path
+    
+    if not abs_path.startswith(download_dir):
+        raise HTTPException(status_code=403, detail="路径访问被拒绝")
+    return abs_path
+
+
 @router.post("/open-folder", response_model=OpenFolderResponse)
 def open_folder(request: OpenFolderRequest) -> Dict[str, bool]:
-    """
-    打开文件夹
-
-    在系统文件管理器中打开指定的文件夹。
-    """
-    folder_path = request.folder_path
-    logger.info(f"打开文件夹: {folder_path}")
-
+    """打开文件夹"""
     try:
-        # 确保路径存在
-        if not os.path.exists(folder_path):
-            logger.error(f"文件夹不存在: {folder_path}")
-            return {"success": False}
-
-        # 如果是文件路径，获取其所在目录
-        if os.path.isfile(folder_path):
-            folder_path = os.path.dirname(folder_path)
-
-        system = platform.system()
-
-        if system == "Windows":
-            # Windows: 使用 os.startfile
-            normalized_path = os.path.abspath(folder_path).replace("/", "\\")
-            os.startfile(normalized_path)
-        elif system == "Darwin":
-            # macOS: 使用 open
-            subprocess.Popen(["open", folder_path])
-        else:
-            # Linux: 使用 xdg-open
-            subprocess.Popen(["xdg-open", folder_path])
-
-        logger.info(f"✓ 已打开文件夹: {folder_path}")
-        return {"success": True}
-
+        folder_path = _validate_path(request.folder_path)
+        if os.path.isdir(folder_path):
+            os.startfile(folder_path)
+            return {"success": True}
+        return {"success": False}
     except Exception as e:
-        logger.error(f"✗ 打开文件夹失败: {e}")
+        logger.error(f"打开文件夹失败: {e}")
         return {"success": False}
 
 
 @router.post("/check-exists", response_model=CheckFileExistsResponse)
 def check_file_exists(request: CheckFileExistsRequest) -> Dict[str, bool]:
-    """
-    检查文件是否存在
-
-    - file_path: 文件路径
-    """
-
-    file_path = request.file_path
-
+    """检查文件是否存在"""
     try:
-        # 安全检查：确保文件路径在下载目录内
-        download_dir = os.path.abspath(settings.get("downloadPath", DOWNLOAD_DIR))
-        abs_path = os.path.abspath(file_path)
-
-        if not abs_path.startswith(download_dir):
-            return {"exists": False}
-
-        return {"exists": os.path.exists(abs_path) and os.path.isfile(abs_path)}
-
+        abs_path = _validate_path(request.file_path)
+        return {"exists": os.path.exists(abs_path)}
     except Exception as e:
         logger.error(f"检查文件存在失败: {e}")
         return {"exists": False}
@@ -147,34 +108,15 @@ def check_file_exists(request: CheckFileExistsRequest) -> Dict[str, bool]:
 
 @router.post("/read-config", response_model=ReadConfigFileResponse)
 def read_config_file(request: ReadConfigFileRequest) -> Dict[str, str]:
-    """
-    读取配置文件内容
-
-    - file_path: 配置文件路径（必须在下载目录内，且为 .txt 文件）
-    """
-
-    file_path = request.file_path
-
+    """读取配置文件"""
     try:
-        logger.info(f"开始读取配置文件: {file_path}")
-
-        # 安全检查：确保文件路径在下载目录内
-        download_dir = os.path.abspath(settings.get("downloadPath", DOWNLOAD_DIR))
-        abs_path = os.path.abspath(file_path)
-
-        if not abs_path.startswith(download_dir) or not abs_path.endswith(".txt"):
-            logger.error(f"文件路径不安全: {abs_path}")
-            raise HTTPException(status_code=400, detail="文件路径不安全")
-
-        if not os.path.exists(abs_path):
-            logger.error(f"配置文件不存在: {abs_path}")
-            raise HTTPException(status_code=404, detail=f"配置文件不存在: {abs_path}")
-
-        with open(abs_path, "r", encoding="utf-8") as f:
-            content = f.read()
-            logger.info(f"配置文件读取成功，内容长度: {len(content)} 字符")
-            return {"content": content}
-
+        abs_path = _validate_path(request.file_path, allow_configs=True)
+        if not abs_path.endswith(".txt"):
+            raise HTTPException(status_code=400, detail="只允许读取 .txt 文件")
+        if os.path.exists(abs_path):
+            with open(abs_path, "r", encoding="utf-8") as f:
+                return {"content": f.read()}
+        return {"content": ""}
     except HTTPException:
         raise
     except Exception as e:
@@ -184,58 +126,59 @@ def read_config_file(request: ReadConfigFileRequest) -> Dict[str, str]:
 
 @router.get("/find-local/{work_id}", response_model=FindLocalFileResponse)
 def find_local_file(work_id: str) -> Dict[str, Any]:
-    """
-    根据作品 ID 查找本地已下载的文件
-
-    - work_id: 作品 ID
-
-    返回:
-    - found: 是否找到
-    - video_path: 视频文件的相对路径（相对于下载目录）
-    - images: 图片文件的相对路径列表
-    """
+    """查找本地已下载的文件"""
     try:
         download_dir = os.path.abspath(settings.get("downloadPath", DOWNLOAD_DIR))
-
-        # 查找视频文件
-        # 1. 直接在下载目录: {work_id}_*.mp4
-        # 2. 在子目录中: aweme_{work_id}/{work_id}_*.mp4 或 {work_id}_*/{work_id}_*.mp4
-        video_patterns = [
-            os.path.join(download_dir, f"{work_id}_*.mp4"),
-            os.path.join(download_dir, f"aweme_{work_id}", f"{work_id}_*.mp4"),
-            os.path.join(download_dir, f"{work_id}_*", f"{work_id}_*.mp4"),
+        
+        patterns = [
+            os.path.join(download_dir, f"{work_id}.mp4"),
+            os.path.join(download_dir, f"aweme_{work_id}", f"{work_id}.mp4"),
+            os.path.join(download_dir, f"{work_id}_*", f"{work_id}.mp4"),
         ]
-
-        for pattern in video_patterns:
+        
+        video_files = []
+        for pattern in patterns:
+            import glob
             video_files = glob.glob(pattern)
             if video_files:
-                rel_path = os.path.relpath(video_files[0], download_dir)
-                return {"found": True, "video_path": rel_path, "images": None}
-
-        # 查找图集文件
-        # 1. 在子目录中: aweme_{work_id}/*.jpg 或 {work_id}_*/*.jpg
-        image_dir_patterns = [
+                break
+        
+        if video_files:
+            video_files.sort(key=os.path.getmtime, reverse=True)
+            rel_path = os.path.relpath(video_files[0], download_dir)
+            return {
+                "found": True,
+                "video_path": rel_path,
+                "images": None,
+            }
+        
+        image_patterns = [
             os.path.join(download_dir, f"aweme_{work_id}"),
             os.path.join(download_dir, f"{work_id}_*"),
         ]
-
-        for pattern in image_dir_patterns:
-            dirs = glob.glob(pattern)
-            for dir_path in dirs:
-                if os.path.isdir(dir_path):
-                    images = []
-                    for ext in [".jpg", ".jpeg", ".png", ".webp"]:
-                        images.extend(glob.glob(os.path.join(dir_path, f"*{ext}")))
-
+        
+        for img_dir_pattern in image_patterns:
+            import glob as g
+            img_dirs = g.glob(img_dir_pattern)
+            for img_dir in img_dirs:
+                if os.path.isdir(img_dir):
+                    import glob
+                    images = sorted(
+                        glob.glob(os.path.join(img_dir, "*.jpg")) + 
+                        glob.glob(os.path.join(img_dir, "*.jpeg")) +
+                        glob.glob(os.path.join(img_dir, "*.png")),
+                        key=os.path.getmtime,
+                        reverse=True
+                    )
                     if images:
-                        images.sort()
-                        rel_paths = [
-                            os.path.relpath(img, download_dir) for img in images
-                        ]
-                        return {"found": True, "video_path": None, "images": rel_paths}
-
+                        return {
+                            "found": True,
+                            "video_path": None,
+                            "images": [os.path.relpath(img, download_dir) for img in images],
+                        }
+        
         return {"found": False, "video_path": None, "images": None}
-
+    
     except Exception as e:
         logger.error(f"查找本地文件失败: {e}")
         return {"found": False, "video_path": None, "images": None}
@@ -243,43 +186,22 @@ def find_local_file(work_id: str) -> Dict[str, Any]:
 
 @router.get("/media/{file_path:path}")
 def serve_media(file_path: str):
-    """
-    提供媒体文件流服务
-
-    - file_path: 相对于下载目录的文件路径
-
-    支持 Range 请求，可用于视频播放进度拖动。
-    """
+    """提供媒体文件访问"""
     try:
         download_dir = os.path.abspath(settings.get("downloadPath", DOWNLOAD_DIR))
         abs_path = os.path.abspath(os.path.join(download_dir, file_path))
-
-        # 安全检查：确保路径在下载目录内
+        
         if not abs_path.startswith(download_dir):
-            logger.warning(f"非法路径访问: {file_path}")
-            raise HTTPException(status_code=403, detail="禁止访问")
-
-        # 检查文件是否存在
-        if not os.path.exists(abs_path) or not os.path.isfile(abs_path):
+            raise HTTPException(status_code=403, detail="路径访问被拒绝")
+        
+        if not os.path.exists(abs_path):
             raise HTTPException(status_code=404, detail="文件不存在")
-
-        # 检查文件扩展名
-        ext = os.path.splitext(abs_path)[1].lower()
-        if ext not in ALLOWED_MEDIA_EXTENSIONS:
-            raise HTTPException(status_code=403, detail="不支持的文件类型")
-
-        # 获取 MIME 类型
-        content_type = mimetypes.guess_type(abs_path)[0] or "application/octet-stream"
-
-        # 使用 FileResponse，自动支持 Range 请求
-        return FileResponse(
-            path=abs_path,
-            media_type=content_type,
-            filename=os.path.basename(abs_path),
-        )
-
+        
+        from starlette.responses import FileResponse
+        return FileResponse(abs_path)
+    
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"提供媒体文件失败: {e}")
+        logger.error(f"媒体文件访问失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))

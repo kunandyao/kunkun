@@ -85,9 +85,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
   const [settings, setSettings] = useState<AppSettings>({
     cookie: APP_DEFAULTS.COOKIE,
     userAgent: APP_DEFAULTS.USER_AGENT,
-    downloadPath: APP_DEFAULTS.DOWNLOAD_PATH,
-    maxRetries: APP_DEFAULTS.MAX_RETRIES,
-    maxConcurrency: APP_DEFAULTS.MAX_CONCURRENCY,
     enableIncrementalFetch: APP_DEFAULTS.ENABLE_INCREMENTAL_FETCH
   });
   const [isSaving, setIsSaving] = useState(false);
@@ -112,30 +109,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
   // 验证设置
   const validateSettings = (): boolean => {
     const newErrors: Partial<Record<keyof AppSettings, string>> = {};
-
-    // 验证下载路径
-    if (!settings.downloadPath) {
-      newErrors.downloadPath = "请选择下载路径";
-    } else {
-      // 检查路径是否有效（支持 Windows 和 Linux/Unix 风格）
-      // Windows: C:\path, D:\folder\subfolder
-      // Linux: /path, ~/path, folder/subfolder
-      const pathRegex = /^(~|([a-zA-Z]:))?([\\/][^<>:"|?*\n\r]+)+[\\/]?$|^\.?[\\/][^<>:"|?*\n\r]+$/;
-      if (!pathRegex.test(settings.downloadPath)) {
-        newErrors.downloadPath = "无效的路径格式";
-      }
-    }
-
-    // 验证最大重试次数
-    if (settings.maxRetries < 1 || settings.maxRetries > 10) {
-      newErrors.maxRetries = "最大重试次数必须在1-10之间";
-    }
-
-    // 验证同时下载任务数
-    if (settings.maxConcurrency < 1 || settings.maxConcurrency > 10) {
-      newErrors.maxConcurrency = "同时下载任务数必须在1-10之间";
-    }
-
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -165,17 +138,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
       console.error("Failed to save settings", e);
     } finally {
       setIsSaving(false);
-    }
-  };
-
-  const handleSelectFolder = async () => {
-    try {
-      const path = await bridge.selectFolder();
-      if (path) {
-        setSettings(prev => ({ ...prev, downloadPath: path }));
-      }
-    } catch (e) {
-      console.error("Failed to select folder", e);
     }
   };
 
@@ -376,95 +338,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose })
             <p className="mt-1.5 text-xs text-gray-400">
               请填写与获取 Cookie 相同的浏览器 User-Agent，以避免被限流。
             </p>
-          </div>
-
-          {/* Download Path */}
-          <div>
-            <label htmlFor="download-path-input" className="block text-sm font-semibold text-gray-700 mb-2">
-              默认下载路径
-            </label>
-            <div className="flex gap-2">
-              <input
-                id="download-path-input"
-                name="downloadPath"
-                type="text"
-                value={settings.downloadPath}
-                onChange={(e) => {
-                  setSettings({ ...settings, downloadPath: e.target.value });
-                  // 清除路径错误
-                  if (errors.downloadPath) {
-                    setErrors(prev => {
-                      const newErrors = { ...prev };
-                      delete newErrors.downloadPath;
-                      return newErrors;
-                    });
-                  }
-                }}
-                placeholder="例如 D:\Downloads"
-                className={`flex-1 px-4 py-2.5 border rounded-xl bg-gray-50 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 transition-all ${errors.downloadPath ? 'border-red-500 focus:border-red-500 focus:ring-red-500/20' : 'border-gray-200 focus:border-blue-500'
-                  }`}
-              />
-              <button
-                onClick={handleSelectFolder}
-                className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl flex items-center transition-colors"
-                title="选择文件夹"
-              >
-                <FolderOpen size={18} />
-              </button>
-            </div>
-            {errors.downloadPath && (
-              <p className="mt-1.5 text-xs text-red-500">{errors.downloadPath}</p>
-            )}
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            {/* Max Retries */}
-            <div>
-              <NumberInput
-                label="最大重试次数"
-                value={settings.maxRetries}
-                min={1}
-                max={10}
-                onChange={(val) => {
-                  setSettings({ ...settings, maxRetries: val });
-                  // 清除错误
-                  if (errors.maxRetries) {
-                    setErrors(prev => {
-                      const newErrors = { ...prev };
-                      delete newErrors.maxRetries;
-                      return newErrors;
-                    });
-                  }
-                }}
-              />
-              {errors.maxRetries && (
-                <p className="mt-1.5 text-xs text-red-500">{errors.maxRetries}</p>
-              )}
-            </div>
-
-            {/* Max Concurrency */}
-            <div>
-              <NumberInput
-                label="同时下载任务数"
-                value={settings.maxConcurrency}
-                min={1}
-                max={10}
-                onChange={(val) => {
-                  setSettings({ ...settings, maxConcurrency: val });
-                  // 清除错误
-                  if (errors.maxConcurrency) {
-                    setErrors(prev => {
-                      const newErrors = { ...prev };
-                      delete newErrors.maxConcurrency;
-                      return newErrors;
-                    });
-                  }
-                }}
-              />
-              {errors.maxConcurrency && (
-                <p className="mt-1.5 text-xs text-red-500">{errors.maxConcurrency}</p>
-              )}
-            </div>
           </div>
 
           {/* 增量采集开关 */}

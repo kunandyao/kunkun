@@ -730,20 +730,84 @@ def _crawl_task(video_count: int, comments_per_video: int, save_to_db: bool = Fa
         
         # 自动进行 Spark 清洗
         cleaned_count = 0
+        analysis_count = 0
         if result.get("success") and result.get("videos"):
+            logger.info(f"开始处理 {len(result.get('videos', []))} 个视频")
             for video_info in result.get("videos", []):
                 csv_file = video_info.get("csv_file")
                 aweme_id = video_info.get("aweme_id", "unknown")
+                title = video_info.get("title", "")
+                
+                logger.info(f"处理视频: {title} (aweme_id: {aweme_id})")
+                logger.info(f"CSV文件: {csv_file}")
+                
                 if csv_file and os.path.exists(csv_file):
+                    logger.info(f"CSV文件存在，开始处理")
                     try:
+                        # 1. 进行 Spark 清洗
+                        logger.info(f"开始 Spark 清洗: {csv_file}")
                         cleaned_path, count = _run_spark_cleaning(csv_file, aweme_id)
+                        logger.info(f"Spark 清洗结果: 路径={cleaned_path}, 数量={count}")
+                        
                         video_info["cleaned_file"] = cleaned_path
                         video_info["cleaned_count"] = count
                         cleaned_count += count if count else 0
+                        
+                        # 2. 自动进行数据分析
+                        logger.info(f"检查清洗后的文件: {cleaned_path}")
+                        if cleaned_path and os.path.exists(cleaned_path):
+                            logger.info(f"清洗后的文件存在，开始分析")
+                            from backend.lib.comment_analyzer import CommentAnalyzer
+                            
+                            logger.info(f"创建分析器: {cleaned_path}")
+                            analyzer = CommentAnalyzer(cleaned_path)
+                            logger.info(f"开始分析")
+                            analysis_result = analyzer.analyze()
+                            logger.info(f"分析完成，结果: {analysis_result.keys()}")
+                            
+                            # 3. 保存分析结果到数据库
+                            analysis_data = {
+                                "title": title,
+                                "aweme_id": aweme_id,
+                                "filename": os.path.basename(cleaned_path),
+                                "filepath": cleaned_path,
+                                "total_comments": analysis_result.get("total", 0),
+                                "sentiment_positive": analysis_result.get("sentiment", {}).get("positive", 0),
+                                "sentiment_neutral": analysis_result.get("sentiment", {}).get("neutral", 0),
+                                "sentiment_negative": analysis_result.get("sentiment", {}).get("negative", 0),
+                                "sentiment_positive_rate": analysis_result.get("sentiment", {}).get("positive_rate", 0),
+                                "sentiment_neutral_rate": analysis_result.get("sentiment", {}).get("neutral_rate", 0),
+                                "sentiment_negative_rate": analysis_result.get("sentiment", {}).get("negative_rate", 0),
+                                "hot_words": analysis_result.get("hot_words", []),
+                                "location_distribution": analysis_result.get("location_distribution", []),
+                                "time_distribution": analysis_result.get("time_distribution", {}),
+                                "user_activity": analysis_result.get("user_activity", {}),
+                                "top_comments": analysis_result.get("top_comments", []),
+                                "topics": analysis_result.get("topics", {}),
+                                "created_time": datetime.datetime.now(),
+                            }
+                            
+                            logger.info(f"准备保存分析结果到数据库")
+                            from backend.lib.database.models import HotCommentAnalysisModel
+                            sql, params = HotCommentAnalysisModel.insert_sql(analysis_data)
+                            
+                            logger.info(f"执行数据库插入")
+                            from backend.lib.database import db_manager
+                            with db_manager.get_cursor() as cursor:
+                                cursor.execute(sql, params)
+                            
+                            video_info["analysis_done"] = True
+                            analysis_count += 1
+                            logger.info(f"定时任务自动分析完成：{title} ({aweme_id})")
+                        else:
+                            logger.warning(f"清洗后的文件不存在: {cleaned_path}")
                     except Exception as e:
-                        logger.error(f"定时任务 Spark 清洗失败 {csv_file}: {e}")
+                        logger.error(f"定时任务处理失败 {csv_file}: {e}", exc_info=True)
+                else:
+                    logger.warning(f"CSV文件不存在或为空: {csv_file}")
         
         result["cleaned_count"] = cleaned_count
+        result["analysis_count"] = analysis_count
         return result
     except Exception as e:
         logger.error(f"定时爬取任务失败：{e}")

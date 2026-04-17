@@ -49,11 +49,7 @@ print(banner)
     default=0,
     help="限制最大采集数量，默认不限制（0表示不限制）",
 )
-@click.option(
-    "--no-download",
-    is_flag=True,
-    help="不下载文件，仅采集数据",
-)
+
 @click.option(
     "-t",
     "--type",
@@ -106,7 +102,6 @@ print(banner)
 def main(
     urls,
     limit,
-    no_download,
     type,
     path,
     cookie,
@@ -195,7 +190,7 @@ def main(
         if type in ["favorite", "collection", "following", "follower"]:
             # 直接采集本账号
             logger.info(f"采集本账号的 {type} 数据")
-            start("", limit, no_download, type, path, cookie_str, filters)
+            start("", limit, type, path, cookie_str, filters)
             return
         else:
             # 提示输入目标
@@ -231,7 +226,7 @@ def main(
                 logger.info(f"文件中共有 {len(lines)} 个目标")
                 for idx, line in enumerate(lines, 1):
                     logger.info(f"处理第 {idx}/{len(lines)} 个目标")
-                    if start(line, limit, no_download, type, path, cookie_str, filters):
+                    if start(line, limit, type, path, cookie_str, filters):
                         success_count += 1
                     else:
                         fail_count += 1
@@ -240,7 +235,7 @@ def main(
                 fail_count += 1
         else:
             # 单个URL
-            if start(url, limit, no_download, type, path, cookie_str, filters):
+            if start(url, limit, type, path, cookie_str, filters):
                 success_count += 1
             else:
                 fail_count += 1
@@ -251,7 +246,7 @@ def main(
     logger.info("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 
-def start(url, limit, no_download, type, path, cookie, filters):
+def start(url, limit, type, path, cookie, filters):
     """
     启动单个采集任务
 
@@ -273,7 +268,6 @@ def start(url, limit, no_download, type, path, cookie, filters):
             target=url,
             limit=limit,
             type=type,
-            down_path=path,
             cookie=cookie,
             user_agent=settings.get("userAgent", ""),
             filters=filters,
@@ -281,18 +275,6 @@ def start(url, limit, no_download, type, path, cookie, filters):
 
         # 执行采集
         douyin.run()
-
-        # 判断是否需要下载
-        if no_download:
-            logger.info("已跳过下载（--no-download）")
-        elif douyin.type in ["following", "follower"]:
-            logger.info("此类型不需要下载文件")
-        else:
-            # 调用下载模块
-            from backend.lib.download import download
-
-            logger.info("开始下载文件...")
-            # 下载功能已移除，不再需要 aria2_conf
 
         return True
 

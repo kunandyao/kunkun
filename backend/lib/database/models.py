@@ -99,7 +99,7 @@ class HotSearchModel:
 
 class VideoModel:
     """视频数据模型"""
-    
+
     @staticmethod
     def create_table() -> str:
         return """
@@ -107,60 +107,31 @@ class VideoModel:
             id INT AUTO_INCREMENT PRIMARY KEY COMMENT '主键 ID',
             aweme_id VARCHAR(50) UNIQUE NOT NULL COMMENT '视频 ID',
             title VARCHAR(500) COMMENT '视频标题',
-            author VARCHAR(200) COMMENT '作者',
-            duration INT COMMENT '视频时长（秒）',
-            cover_url VARCHAR(500) COMMENT '封面 URL',
-            play_count BIGINT COMMENT '播放量',
-            digg_count BIGINT COMMENT '点赞数',
-            comment_count BIGINT COMMENT '评论数',
-            share_count BIGINT COMMENT '分享数',
             crawl_time DATETIME NOT NULL COMMENT '爬取时间',
             INDEX idx_aweme_id (aweme_id),
             INDEX idx_crawl_time (crawl_time)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='视频数据表';
         """
-    
+
     @staticmethod
     def insert_sql(data: Dict[str, Any]) -> tuple:
         """
         生成插入视频的 SQL 语句
-        
+
         数据字段映射（从 JSON/爬取数据到数据库）:
         - id (JSON) → aweme_id (数据库)
         - desc → title
-        - author_nickname → author
-        - duration → duration
-        - cover → cover_url
-        - digg_count → digg_count
-        - comment_count → comment_count
-        - share_count → share_count
-        - play_count: 暂时无数据源，保留字段
         """
         sql = """
-        INSERT INTO videos (aweme_id, title, author, duration, cover_url, 
-                           play_count, digg_count, comment_count, share_count, crawl_time)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        INSERT INTO videos (aweme_id, title, crawl_time)
+        VALUES (%s, %s, %s)
         ON DUPLICATE KEY UPDATE
             title = VALUES(title),
-            author = VALUES(author),
-            duration = VALUES(duration),
-            cover_url = VALUES(cover_url),
-            play_count = VALUES(play_count),
-            digg_count = VALUES(digg_count),
-            comment_count = VALUES(comment_count),
-            share_count = VALUES(share_count),
             crawl_time = VALUES(crawl_time)
         """
         params = (
             data.get('id'),  # JSON 的 id 字段映射到 aweme_id
             data.get('desc'),  # JSON 的 desc 字段映射到 title
-            data.get('author_nickname'),  # JSON 的 author_nickname 映射到 author
-            data.get('duration'),
-            data.get('cover'),  # JSON 的 cover 映射到 cover_url
-            data.get('liveWatchCount') or data.get('play_count'),  # 使用 liveWatchCount 或 play_count
-            data.get('digg_count'),
-            data.get('comment_count'),
-            data.get('share_count'),
             data.get('crawl_time', datetime.now())
         )
         return sql, params

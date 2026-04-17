@@ -21,8 +21,8 @@ import { TaskType, User } from '../types';
 import { formatSpeedSimple } from '../utils/formatters';
 
 interface SidebarProps {
-  activeTab: TaskType;
-  setActiveTab: (tab: TaskType) => void;
+  activeTab: TaskType | string;
+  setActiveTab: (tab: TaskType | string) => void;
   onOpenSettings: () => void;
   showLogs: boolean;
   setShowLogs: (show: boolean) => void;
@@ -102,6 +102,33 @@ export const Sidebar: React.FC<SidebarProps> = ({
             );
           })}
         </ul>
+
+        {/* 用户管理（仅管理员可见） */}
+        {currentUser && currentUser.role === 'admin' && (
+          <>
+            <div className="px-3 mt-8 mb-3 text-xs font-bold text-slate-500 uppercase tracking-wider">
+              系统管理
+            </div>
+            <ul className="space-y-1">
+              <li>
+                <button
+                  onClick={() => setActiveTab('user_management')}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 group ${
+                    activeTab === 'user_management'
+                      ? 'bg-blue-600 text-white shadow-md shadow-blue-900/20'
+                      : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'
+                  }`}
+                >
+                  <UserIcon size={18} className={`transition-colors ${
+                    activeTab === 'user_management' ? 'text-white' : 'text-slate-500 group-hover:text-slate-300'
+                  }`} />
+                  <span className="font-medium text-sm">用户管理</span>
+                  {activeTab === 'user_management' && <div className="ml-auto w-1.5 h-1.5 bg-white rounded-full opacity-50"></div>}
+                </button>
+              </li>
+            </ul>
+          </>
+        )}
       </nav>
 
       {/* Footer / Settings */}
